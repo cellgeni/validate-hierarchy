@@ -55,6 +55,7 @@ DB_NAME=reprocessing
 
 # iRODS configuration
 IRODS_ENVIRONMENT_FILE=/path/to/your/.irods/irods_environment.json
+IRODS_SCHEMA_FILE=/path/to/your/schema.yml
 ```
 
 ## Usage
@@ -113,11 +114,14 @@ sample002,GSE123456,pending,batch_01
 Validate iRODS collections against predefined schemas:
 
 ```bash
-# Basic validation
-sample-tracking irods-validate /zone/collection/path schema.yml
+# Basic validation (using schema from IRODS_SCHEMA_FILE env variable)
+sample-tracking irods-validate /zone/collection/path
+
+# Validation with explicit schema file
+sample-tracking irods-validate /zone/collection/path --schema schema.yml
 
 # With custom timeout
-sample-tracking irods-validate /zone/collection/path schema.yml --timeout 300
+sample-tracking irods-validate /zone/collection/path --schema schema.yml --timeout 300
 ```
 
 #### Schema Format
@@ -173,7 +177,7 @@ collections:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `collection` | iRODS collection path | Required |
-| `schema` | Schema file path (YAML/JSON) | Required |
+| `--schema` | Schema file path (YAML/JSON) | `IRODS_SCHEMA_FILE` env var |
 | `--timeout` | iRODS connection timeout (seconds) | `120` |
 
 ## Development
@@ -186,7 +190,7 @@ src/tracking/
 ├── __main__.py          # Entry point for python -m tracking
 ├── cli.py              # Command-line interface
 ├── config.py           # Configuration management
-├── irods_validation.py # iRODS validation logic
+├── irods.py            # iRODS validation logic
 ├── io/
 │   ├── __init__.py
 │   └── readers.py      # File reading utilities
@@ -218,8 +222,11 @@ python src/tracking/cli.py update samples.csv
 # Dry run to test input validation
 sample-tracking update test_samples.csv --dry-run
 
-# Validate schema syntax
-sample-tracking irods-validate /test/collection test_schema.yml --timeout 30
+# Validate schema syntax (with explicit schema file)
+sample-tracking irods-validate /test/collection --schema test_schema.yml --timeout 30
+
+# Validate using default schema from environment
+sample-tracking irods-validate /test/collection --timeout 30
 ```
 
 ## Logging

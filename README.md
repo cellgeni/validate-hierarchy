@@ -1,6 +1,6 @@
 # Track Reprocessing
 
-A CLI tool for managing and tracking reprocessing datasets with support for database operations and iRODS collection validation.
+A CLI tool for managing and tracking reprocessed datasets with support for database operations and iRODS collection validation.
 
 ## Overview
 

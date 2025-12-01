@@ -19,14 +19,6 @@ ISSUE_LEVELS: Dict[str, int] = {
     "missing_metadata_keys":  logging.ERROR,
 }
 
-def load_schema_from_file(path: str) -> 'CollectionSchema':
-    """
-    Load a CollectionSchema from a YAML or JSON file.
-    """
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return CollectionSchema.model_validate(data)
-
 
 def load_collection_from_irods(session: iRODSSession, path: str) -> 'IrodsCollection':
     """

@@ -3,8 +3,9 @@ import argparse
 import logging
 from dotenv import load_dotenv
 from irods.session import iRODSSession
+from tracking.io import load_schema_from_file
 from tracking.update import update_samples
-from tracking.irods import load_collection_from_irods, validate_collection, load_schema_from_file, log_validation_report
+from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, CollectionSchema
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -32,7 +33,10 @@ def init_parser() -> argparse.ArgumentParser:
         "collection", type=str, help="Path to the iRODS collection to validate"
     )
     irods_validate_parser.add_argument(
-        "schema", type=str, help="Path to the schema file (YAML or JSON)"
+        "--schema",
+        type=str,
+        default=None,
+        help="Path to the schema file (YAML or JSON)"
     )
     irods_validate_parser.add_argument(
         "--timeout",
@@ -118,7 +122,15 @@ def main() -> None:
             )
         case "irods-validate":
             # Load schema
-            schema = load_schema_from_file(args.schema)
+            if args.schema is None and not os.environ.get("IRODS_SCHEMA_FILE"):
+                logger.error("Schema file must be provided via --schema or IRODS_SCHEMA_FILE env variable.")
+                return
+
+            schema_path = args.schema or os.environ.get("IRODS_SCHEMA_FILE")
+            schema = load_schema_from_file(schema_path)
+
+            # Validate schema
+            schema = CollectionSchema.model_validate(schema)
 
             # Validate collection
             env_file = os.environ.get("IRODS_ENVIRONMENT_FILE")

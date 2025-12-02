@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from irods.session import iRODSSession
 from tracking.io import load_schema_from_file
 from tracking.update import update_samples
-from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report, render_markdown_report, CollectionSchema
+from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, CollectionSchema
 
 load_dotenv()
 
@@ -90,6 +90,18 @@ def init_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=None,
         help="Email address to send the validation report to",
+    )
+    irods_validate_parser.add_argument(
+        "--report",
+        type=str,
+        default=None,
+        help="Path to save the validation report",
+    )
+    irods_validate_parser.add_argument(
+        "--min-collection-summary",
+        type=int,
+        default=5,
+        help="Minimum number of collections to trigger summary report (default: 5)",
     )
 
     # Subparser for update command
@@ -205,18 +217,32 @@ def main() -> None:
                 text_report = render_markdown_report(reports)
             else:
                 text_report = render_text_report(reports)
-            print(text_report)
+
+            report_to_show = text_report if len(reports) < args.min_collection_summary else render_text_report_summarised(reports)
+            print(report_to_show)
+            if args.report:
+                with open(args.report, "w", encoding="utf-8") as f:
+                    f.write(text_report)
 
             # if args.email:
             #     markdown_report = render_markdown_report(reports) if args.report_format != "markdown" else text_report
             #     html = markdown.markdown(markdown_report)
             if args.email:
                 msg = EmailMessage()
-                msg.set_content(text_report)
+                msg.set_content(report_to_show)
                 msg["Subject"] = "iRODS Validation Report"
                 msg["From"] = "noreply-reprocessing@cellgeni-su"
                 msg["To"] = ", ".join(args.email)
-                msg.set_content(text_report)
+                if args.report:
+                    with open(args.report, "rb") as f:
+                        file_data = f.read()
+                        file_name = os.path.basename(args.report)
+                    msg.add_attachment(
+                        file_data,
+                        maintype="text",
+                        subtype="plain",
+                        filename=file_name
+                    )
                 #msg.add_alternative(html, subtype="html")
 
                 with smtplib.SMTP("localhost") as server:

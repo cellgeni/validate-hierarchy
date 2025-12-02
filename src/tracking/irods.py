@@ -112,6 +112,38 @@ def render_text_report(reports: List[ValidationReport]) -> str:
     return "\n".join(lines)
 
 
+def render_text_report_summarised(reports: List[ValidationReport]) -> str:
+    """
+    Render a summarised multi-collection validation report as plain-text.
+    """
+    if not reports:
+        return "No collections updated in the given time window."
+
+    total = len(reports)
+    failing = sum(1 for r in reports if not r.ok)
+    passing = total - failing
+
+    # Count issue kinds globally
+    issue_counter = Counter()
+    for r in reports:
+        issue_counter.update(i.kind for i in r.issues)
+
+    lines: List[str] = []
+    lines.append("iRODS Validation Report")
+    lines.append("=======================")
+    lines.append(f"Total collections checked: {total}")
+    lines.append(f"✅ Passing collections:       {passing}")
+    lines.append(f"❌ Failing collections:       {failing}")
+    lines.append("")
+
+    if issue_counter:
+        lines.append("Issue counts by type:")
+        for kind, count in sorted(issue_counter.items()):
+            lines.append(f"  - {kind}: {count}")
+    return "\n".join(lines)
+
+
+
 def render_markdown_report(reports: List[ValidationReport]) -> str:
     if not reports:
         return "_No collections updated in the given time window._"

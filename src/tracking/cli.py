@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 from email.message import EmailMessage
 import smtplib
 import markdown
+from tqdm import tqdm
 from dotenv import load_dotenv
 from irods.session import iRODSSession
 from tracking.io import load_schema_from_file
@@ -102,6 +103,11 @@ def init_parser() -> argparse.ArgumentParser:
         type=int,
         default=5,
         help="Minimum number of collections to trigger summary report (default: 5)",
+    )
+    irods_validate_parser.add_argument(
+        "--progress-bar",
+        action="store_true",
+        help="Show a progress bar during validation",
     )
 
     # Subparser for update command
@@ -204,7 +210,11 @@ def main() -> None:
             # Validate collection
             env_file = os.environ.get("IRODS_ENVIRONMENT_FILE")
             reports = []
-            for collection in args.collection:
+            collection_iterable = tqdm(args.collection, desc="Validating collections", unit="collection") if args.progress_bar else args.collection
+            for collection in collection_iterable:
+                if args.progress_bar:
+                    collection_iterable.set_postfix_str(f"Processing: {collection}")
+                logger.info("Validating iRODS collection: %s", collection)
                 with iRODSSession(irods_env_file=env_file) as session:
                     session.connection_timeout = args.timeout
                     collection = load_collection_from_irods(session, collection)

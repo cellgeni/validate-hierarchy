@@ -1,18 +1,44 @@
 import os
 import argparse
 import logging
+from logging.handlers import RotatingFileHandler
+from email.message import EmailMessage
+import smtplib
+import markdown
 from dotenv import load_dotenv
 from irods.session import iRODSSession
 from tracking.io import load_schema_from_file
 from tracking.update import update_samples
-from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, CollectionSchema
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report, render_markdown_report, CollectionSchema
 
 load_dotenv()
+
+def setup_logging(
+    log_file: str = "tracking.log",
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
+    backup_count: int = 5,  # Keep 5 backup files
+    level: int = logging.INFO
+):
+    """Setup logging with file rotation"""
+    # Remove any existing handlers
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Create rotating file handler
+    handler = RotatingFileHandler(
+        filename=log_file,
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    
+    # Set format
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger.setLevel(level)
+    root_logger.addHandler(handler)
 
 
 def init_parser() -> argparse.ArgumentParser:
@@ -27,10 +53,13 @@ def init_parser() -> argparse.ArgumentParser:
 
     # Subparser for schema validation
     irods_validate_parser = subparsers.add_parser(
-        "irods-validate", help="Validate iRODS collections against a schema"
+        "irods-validate",
+        help="Validate iRODS collections against a schema"
     )
     irods_validate_parser.add_argument(
-        "collection", type=str, help="Path to the iRODS collection to validate"
+        "collection",
+        nargs="+",
+        help="Path to the iRODS collection to validate"
     )
     irods_validate_parser.add_argument(
         "--schema",
@@ -43,6 +72,24 @@ def init_parser() -> argparse.ArgumentParser:
         type=int,
         default=120,
         help="Connection timeout for iRODS session (default: 120 seconds)",
+    )
+    irods_validate_parser.add_argument(
+        "--log-file",
+        type=str,
+        default="irods_validation.log",
+        help="Path to the log file for validation results (default: irods_validation.log)",
+    )
+    irods_validate_parser.add_argument(
+        "--report-format",
+        choices=["text", "markdown"],
+        default="text",
+        help="Format of the validation report output (default: text)",
+    )
+    irods_validate_parser.add_argument(
+        "--email",
+        nargs="+",
+        default=None,
+        help="Email address to send the validation report to",
     )
 
     # Subparser for update command
@@ -103,6 +150,12 @@ def init_parser() -> argparse.ArgumentParser:
         default="pending",
         help="Default status for new records (default: pending)",
     )
+    update_parser.add_argument(
+        "--log-file",
+        type=str,
+        default="update.log",
+        help="Path to the log file for update process (default: update.log)",
+    )
     return parser
 
 
@@ -110,6 +163,10 @@ def main() -> None:
     # init the parser
     parser = init_parser()
     args = parser.parse_args()
+
+    # Setup logging
+    setup_logging(log_file=args.log_file)
+    logger = logging.getLogger(__name__)
 
     # Run update command if specified
     match args.command:
@@ -134,9 +191,33 @@ def main() -> None:
 
             # Validate collection
             env_file = os.environ.get("IRODS_ENVIRONMENT_FILE")
-            with iRODSSession(irods_env_file=env_file) as session:
-                session.connection_timeout = args.timeout
-                collection = load_collection_from_irods(session, args.collection)
-                report = validate_collection(collection, schema)
-            # Log validation report
-            log_validation_report(report)
+            reports = []
+            for collection in args.collection:
+                with iRODSSession(irods_env_file=env_file) as session:
+                    session.connection_timeout = args.timeout
+                    collection = load_collection_from_irods(session, collection)
+                    report = validate_collection(collection, schema)
+                    reports.append(report)
+                # Log validation report
+                log_validation_report(report)
+            # Also print a text summary to console
+            if args.report_format == "markdown":
+                text_report = render_markdown_report(reports)
+            else:
+                text_report = render_text_report(reports)
+            print(text_report)
+
+            # if args.email:
+            #     markdown_report = render_markdown_report(reports) if args.report_format != "markdown" else text_report
+            #     html = markdown.markdown(markdown_report)
+            if args.email:
+                msg = EmailMessage()
+                msg.set_content(text_report)
+                msg["Subject"] = "iRODS Validation Report"
+                msg["From"] = "noreply-reprocessing@cellgeni-su"
+                msg["To"] = ", ".join(args.email)
+                msg.set_content(text_report)
+                #msg.add_alternative(html, subtype="html")
+
+                with smtplib.SMTP("localhost") as server:
+                    server.send_message(msg)

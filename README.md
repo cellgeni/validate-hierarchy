@@ -17,7 +17,11 @@ The tool is designed for bioinformatics workflows where sample data needs to be 
 - **Database Integration**: PostgreSQL support with SQLAlchemy ORM
 - **Flexible Input**: Support for both CSV and JSON input formats
 - **Dry Run Mode**: Test operations without making actual changes
-- **Configurable Logging**: Detailed logging with customizable levels
+- **Configurable Logging**: Detailed logging with file rotation and customizable levels
+- **Progress Tracking**: Visual progress bars for long-running validation operations
+- **Email Reporting**: Send validation reports via email with file attachments
+- **Multiple Output Formats**: Generate reports in text or markdown format
+- **Batch Processing**: Validate multiple collections in a single command
 
 ## Installation
 
@@ -120,8 +124,30 @@ sample-tracking irods-validate /zone/collection/path
 # Validation with explicit schema file
 sample-tracking irods-validate /zone/collection/path --schema schema.yml
 
-# With custom timeout
-sample-tracking irods-validate /zone/collection/path --schema schema.yml --timeout 300
+# Multiple collections at once
+sample-tracking irods-validate /path/collection1 /path/collection2 /path/collection3 --schema schema.yml
+
+# With progress bar
+sample-tracking irods-validate /zone/collection/path --schema schema.yml --progress-bar
+
+# Save report to file
+sample-tracking irods-validate /zone/collection/path --schema schema.yml --report validation_report.md --report-format markdown
+
+# Send email report
+sample-tracking irods-validate /zone/collection/path --schema schema.yml --email user@example.com admin@example.com
+
+# Complete example with all features
+sample-tracking irods-validate /path/collection1 /path/collection2 \
+    --schema validation_schema.yml \
+    --progress-bar \
+    --report-format markdown \
+    --report validation_results.md \
+    --email alice@example.com bob@example.com \
+    --timeout 300 \
+    --log-file validation.log
+
+# Validate collections from a file list
+sample-tracking irods-validate $(cat collections.txt) --schema schema.yml --progress-bar
 ```
 
 #### Schema Format
@@ -171,14 +197,21 @@ collections:
 | `--batch-size` | Records per batch | `100` |
 | `--dry-run` | Validate without updating | `False` |
 | `--status-default` | Default status for new records | `pending` |
+| `--log-file` | Path to log file for update process | `update.log` |
 
 ### `irods-validate` Command Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `collection` | iRODS collection path | Required |
+| `collection` | iRODS collection path(s) - accepts multiple paths | Required |
 | `--schema` | Schema file path (YAML/JSON) | `IRODS_SCHEMA_FILE` env var |
 | `--timeout` | iRODS connection timeout (seconds) | `120` |
+| `--log-file` | Path to log file for validation results | `irods_validation.log` |
+| `--report-format` | Output format (`text`, `markdown`) | `text` |
+| `--email` | Email address(es) to send report to (space-separated) | None |
+| `--report` | Path to save validation report file | None |
+| `--min-collection-summary` | Min collections to trigger summary report | `5` |
+| `--progress-bar` | Show progress bar during validation | `False` |
 
 ## Development
 
@@ -222,11 +255,72 @@ python src/tracking/cli.py update samples.csv
 # Dry run to test input validation
 sample-tracking update test_samples.csv --dry-run
 
-# Validate schema syntax (with explicit schema file)
-sample-tracking irods-validate /test/collection --schema test_schema.yml --timeout 30
+# Validate with progress bar and save report
+sample-tracking irods-validate /test/collection --schema test_schema.yml --progress-bar --report test_results.md
 
-# Validate using default schema from environment
-sample-tracking irods-validate /test/collection --timeout 30
+# Validate multiple collections with email notification
+sample-tracking irods-validate /collection1 /collection2 /collection3 \
+    --schema schema.yml \
+    --progress-bar \
+    --email admin@example.com \
+    --report-format markdown
+
+# Validate collections from file list
+mapfile -t collections < collections.txt
+sample-tracking irods-validate "${collections[@]}" --schema schema.yml --progress-bar
+```
+
+## Advanced Usage
+
+### Multiple Collection Validation
+
+You can validate multiple collections in several ways:
+
+```bash
+# Direct multiple arguments
+sample-tracking irods-validate /path/coll1 /path/coll2 /path/coll3 --schema schema.yml
+
+# From a file containing collection paths (one per line)
+sample-tracking irods-validate $(cat collections.txt) --schema schema.yml
+
+# Using bash arrays for complex processing
+mapfile -t collections < <(find /archive -name "GSE*" -type d | head -10)
+sample-tracking irods-validate "${collections[@]}" --schema schema.yml --progress-bar
+```
+
+### Email Reports
+
+Send validation results via email:
+
+```bash
+# Single recipient
+sample-tracking irods-validate /collection --email user@example.com
+
+# Multiple recipients
+sample-tracking irods-validate /collection --email admin@example.com user@example.com
+
+# With file attachment
+sample-tracking irods-validate /collection \
+    --email admin@example.com \
+    --report validation_results.md \
+    --report-format markdown
+```
+
+### Progress Tracking
+
+For long-running validations, use the progress bar:
+
+```bash
+# Basic progress bar
+sample-tracking irods-validate /large/collection --progress-bar
+
+# Progress bar shows current collection being processed
+sample-tracking irods-validate /coll1 /coll2 /coll3 --progress-bar
+```
+
+Example output:
+```
+Validating collections: 67%|██████▋   | 2/3 [00:30<00:15] Processing: GSE123456
 ```
 
 ## Logging
@@ -236,6 +330,24 @@ The tool uses Python's logging module with INFO level by default. Logs include:
 - Validation reports with issue counts
 - Database connection status
 - Error details for troubleshooting
+
+### Log File Configuration
+
+Each command generates its own log file:
+- `irods-validate`: Uses `irods_validation.log` by default
+- `update`: Uses `update.log` by default
+
+Configure log files with the `--log-file` option:
+
+```bash
+# Custom log file for validation
+sample-tracking irods-validate /collection --log-file my_validation.log
+
+# Custom log file for updates  
+sample-tracking update data.csv --log-file my_update.log
+```
+
+Log files automatically rotate when they reach 10MB, keeping 5 backup files.
 
 ## License
 

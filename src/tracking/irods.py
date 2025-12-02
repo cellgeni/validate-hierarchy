@@ -20,6 +20,29 @@ ISSUE_LEVELS: Dict[str, int] = {
 }
 
 
+class ValidationIssue(BaseModel):
+    """
+    Represents a validation issue found during schema validation.
+    """
+    path: str
+    kind: Literal[
+        "name_mismatch", "missing_files", "unexpected_files",
+        "missing_collections", "too_many_collections", "unexpected_collections",
+        "missing_metadata_keys"
+    ]
+    message: str
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ValidationReport(BaseModel):
+    """
+    Represents the result of validating an iRODS collection against a schema.
+    """
+    path: str
+    ok: bool
+    issues: List['ValidationIssue'] = Field(default_factory=list)
+
+
 def load_collection_from_irods(session: iRODSSession, path: str) -> 'IrodsCollection':
     """
     Load an IrodsCollection tree from iRODS starting at `path`.
@@ -60,6 +83,55 @@ def log_validation_report(
     summary = ", ".join(f"{k}={counts[k]}" for k in sorted(counts)) or "no issues"
     status = "PASSED" if report.ok else "FAILED"
     logger.info("Validation %s (%s)", status, summary)
+
+
+def render_text_report(reports: List[ValidationReport]) -> str:
+    """
+    Render a multi-collection validation report as a plain-text summary.
+    """
+    lines: List[str] = []
+    if not reports:
+        return "No collections updated in the given time window."
+
+    for rep in reports:
+        header = f"{rep.path}"
+        lines.append("=" * len(header))
+        lines.append(header)
+        lines.append("=" * len(header))
+
+        if rep.ok:
+            lines.append("Status: OK ✅ (no issues)")
+        else:
+            lines.append(f"Status: FAILED ❌ ({len(rep.issues)} issues)")
+            for i, issue in enumerate(rep.issues, start=1):
+                lines.append(f"  [{i}] {issue.kind}: {issue.message}")
+                if issue.details:
+                    lines.append(f"      details: {issue.details}")
+        lines.append("")  # blank line between collections
+
+    return "\n".join(lines)
+
+
+def render_markdown_report(reports: List[ValidationReport]) -> str:
+    if not reports:
+        return "_No collections updated in the given time window._"
+
+    lines: List[str] = []
+    for rep in reports:
+        lines.append(f"## `{rep.path}`  ")
+
+        if rep.ok:
+            lines.append("\n**Status:** ✅ OK (no issues)\n")
+        else:
+            lines.append(f"\n**Status:** ❌ FAILED ({len(rep.issues)} issues)\n")
+            for issue in rep.issues:
+                lines.append(f"- **{issue.kind}** – {issue.message}")
+                if issue.details:
+                    lines.append(f"  - details: `{issue.details}`")
+        lines.append("")  # blank line
+
+    return "\n".join(lines)
+
 
 class NameRule(BaseModel):
     """
@@ -114,28 +186,6 @@ class CollectionSchema(BaseModel):
     collections: List['CollectionSchema'] = Field(default_factory=list)
     allow_extra_files: bool = False
     allow_extra_collections: bool = False
-
-
-class ValidationIssue(BaseModel):
-    """
-    Represents a validation issue found during schema validation.
-    """
-    path: str
-    kind: Literal[
-        "name_mismatch", "missing_files", "unexpected_files",
-        "missing_collections", "too_many_collections", "unexpected_collections",
-        "missing_metadata_keys"
-    ]
-    message: str
-    details: Dict[str, Any] = Field(default_factory=dict)
-
-
-class ValidationReport(BaseModel):
-    """
-    Represents the result of validating an iRODS collection against a schema.
-    """
-    ok: bool
-    issues: List['ValidationIssue'] = Field(default_factory=list)
 
 
 def validate_collection(collection: IrodsCollection, schema: CollectionSchema) -> ValidationReport:
@@ -227,4 +277,4 @@ def validate_collection(collection: IrodsCollection, schema: CollectionSchema) -
                 details={"unexpected_collections": unexpected_collections}
             ))
     
-    return ValidationReport(ok=len(issues) == 0, issues=issues)
+    return ValidationReport(path=str(collection.path), ok=len(issues) == 0, issues=issues)

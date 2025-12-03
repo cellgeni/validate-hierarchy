@@ -1,6 +1,7 @@
 import os
 import argparse
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 from email.message import EmailMessage
 import smtplib
@@ -8,6 +9,7 @@ import markdown
 from tqdm import tqdm
 from dotenv import load_dotenv
 from irods.session import iRODSSession
+from irods.exception import NetworkException
 from tracking.io import load_schema_from_file
 from tracking.update import update_samples
 from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, CollectionSchema
@@ -202,6 +204,10 @@ def main() -> None:
                 return
 
             schema_path = args.schema or os.environ.get("IRODS_SCHEMA_FILE")
+            if schema_path is None:
+                logger.error("Schema file path is None. This should not happen.")
+                return
+                
             schema = load_schema_from_file(schema_path)
 
             # Validate schema
@@ -211,17 +217,58 @@ def main() -> None:
             env_file = os.environ.get("IRODS_ENVIRONMENT_FILE")
             reports = []
             collection_iterable = tqdm(args.collection, desc="Validating collections", unit="collection") if args.progress_bar else args.collection
-            for collection in collection_iterable:
+            
+            for collection_path in collection_iterable:
                 if args.progress_bar:
-                    collection_iterable.set_postfix_str(f"Processing: {collection}")
-                logger.info("Validating iRODS collection: %s", collection)
-                with iRODSSession(irods_env_file=env_file) as session:
-                    session.connection_timeout = args.timeout
-                    collection = load_collection_from_irods(session, collection)
-                    report = validate_collection(collection, schema)
-                    reports.append(report)
-                # Log validation report
-                log_validation_report(report)
+                    collection_iterable.set_postfix_str(f"Processing: {collection_path}")
+                
+                logger.info("Validating iRODS collection: %s", collection_path)
+                
+                # Retry logic for network exceptions
+                max_retries = 3
+                retry_count = 0
+                
+                while retry_count < max_retries:
+                    try:
+                        with iRODSSession(irods_env_file=env_file) as session:
+                            session.connection_timeout = args.timeout
+                            collection_obj = load_collection_from_irods(session, collection_path)
+                            report = validate_collection(collection_obj, schema)
+                            reports.append(report)
+                            
+                        # Log validation report
+                        log_validation_report(report)
+                        break  # Success, exit retry loop
+                        
+                    except NetworkException as e:
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            logger.warning(
+                                f"Network error for collection {collection_path} (attempt {retry_count}/{max_retries}): {e}. "
+                                f"Retrying in 15 seconds..."
+                            )
+                            if args.progress_bar:
+                                collection_iterable.set_postfix_str(f"Retrying {collection_path} in 15s...")
+                            time.sleep(15)
+                        else:
+                            logger.error(
+                                f"Failed to validate {collection_path} after {max_retries} attempts: {e}"
+                            )
+                            # Create error report for failed collection
+                            error_report = {
+                                'collection': collection_path,
+                                'errors': [f"Network error after {max_retries} retries: {str(e)}"],
+                                'warnings': []
+                            }
+                            reports.append(error_report)
+                            if args.progress_bar:
+                                collection_iterable.set_postfix_str(f"Failed: {collection_path}")
+                    
+                    except Exception as e:
+                        logger.error(f"Unexpected error validating {collection_path}: {e}")
+                        if args.progress_bar:
+                            collection_iterable.set_postfix_str(f"Error: {collection_path}")
+                        break  # Don't retry for non-network errors
             # Also print a text summary to console
             if args.report_format == "markdown":
                 text_report = render_markdown_report(reports)

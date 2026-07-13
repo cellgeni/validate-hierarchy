@@ -60,7 +60,15 @@ DB_NAME=reprocessing
 # iRODS configuration
 IRODS_ENVIRONMENT_FILE=/path/to/your/.irods/irods_environment.json
 IRODS_SCHEMA_FILE=/path/to/your/schema.yml
+
+# Local directory validation configuration
+LOCAL_SCHEMA_FILE=/path/to/your/local_schema.yml
 ```
+
+`irods-validate` and `local-validate` use **separate** default schemas:
+`irods-validate` falls back to `IRODS_SCHEMA_FILE` and `local-validate` falls
+back to `LOCAL_SCHEMA_FILE` when `--schema` is not given. Neither command falls
+back to the other's variable.
 
 ## Usage
 
@@ -183,14 +191,19 @@ collections:
 
 ### Local Directory Validation (`local-validate` command)
 
-Validate local filesystem directories against the same schemas used for iRODS
-collections. This is useful for checking datasets on disk before they are
-uploaded to iRODS. Directories are validated recursively; files map to data
-objects and sub-directories map to sub-collections. Local directories carry no
-metadata, so schema `metadata_keys` should be left empty.
+Validate local filesystem directories against the same *kind* of schema used
+for iRODS collections (see the schema format above). This is useful for checking
+datasets on disk before they are uploaded to iRODS. Directories are validated
+recursively; files map to data objects and sub-directories map to
+sub-collections. Local directories carry no metadata, so schema `metadata_keys`
+should be left empty.
+
+The default schema for `local-validate` comes from the `LOCAL_SCHEMA_FILE`
+environment variable (separate from `irods-validate`'s `IRODS_SCHEMA_FILE`), so
+each command can have its own default schema. Override either with `--schema`.
 
 ```bash
-# Basic validation (using schema from IRODS_SCHEMA_FILE env variable)
+# Basic validation (using schema from LOCAL_SCHEMA_FILE env variable)
 sample-tracking local-validate /path/to/dataset
 
 # Validation with explicit schema file
@@ -248,19 +261,29 @@ option.
 | `--report` | Path to save validation report file | None |
 | `--min-collection-summary` | Min collections to trigger summary report | `5` |
 | `--progress-bar` | Show progress bar during validation | `False` |
+| `--no-exit` | Always exit `0`, even if some collections FAILED | `False` |
 
 ### `local-validate` Command Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `directory` | Local directory path(s) - accepts multiple paths | Required |
-| `--schema` | Schema file path (YAML/JSON) | `IRODS_SCHEMA_FILE` env var |
+| `--schema` | Schema file path (YAML/JSON) | `LOCAL_SCHEMA_FILE` env var |
 | `--log-file` | Path to log file for validation results | `local_validation.log` |
 | `--report-format` | Output format (`text`, `markdown`) | `text` |
 | `--email` | Email address(es) to send report to (space-separated) | None |
 | `--report` | Path to save validation report file | None |
 | `--min-collection-summary` | Min directories to trigger summary report | `5` |
 | `--progress-bar` | Show progress bar during validation | `False` |
+| `--no-exit` | Always exit `0`, even if some directories FAILED | `False` |
+
+### Exit Codes
+
+Both `irods-validate` and `local-validate` exit with status `1` when any
+collection/directory has a FAILED validation status, and `0` otherwise. This
+makes them usable in CI pipelines and cron scripts. Pass `--no-exit` to always
+exit `0` regardless of validation results (e.g. when you only want the report
+emailed and don't want a non-zero status to abort a wrapper script).
 
 ## Development
 

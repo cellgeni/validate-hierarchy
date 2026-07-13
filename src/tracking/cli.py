@@ -79,6 +79,12 @@ def init_parser() -> argparse.ArgumentParser:
         help="Connection timeout for iRODS session (default: 120 seconds)",
     )
     irods_validate_parser.add_argument(
+        "--config-file",
+        type=str,
+        default=None,
+        help="Path to the iRODS environment (config) file. Defaults to IRODS_ENVIRONMENT_FILE env variable.",
+    )
+    irods_validate_parser.add_argument(
         "--log-file",
         type=str,
         default="irods_validation.log",
@@ -347,7 +353,7 @@ def main() -> None:
                 return
 
             # Validate collection
-            env_file = os.environ.get("IRODS_ENVIRONMENT_FILE")
+            env_file = args.config_file or os.environ.get("IRODS_ENVIRONMENT_FILE")
             reports = []
             collection_iterable = tqdm(args.collection, desc="Validating collections", unit="collection") if args.progress_bar else args.collection
             

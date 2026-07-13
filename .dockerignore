@@ -1,0 +1,31 @@
+# Version control / metadata
+.git
+.gitignore
+
+# Local virtualenv (rebuilt inside the image)
+.venv
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets / local env
+.env
+.env.example
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Large data / logs / generated artifacts not needed in the image
+*.log
+logs/
+*.csv
+*.list
+*.json
+schema.txt
+report.txt
+examples/

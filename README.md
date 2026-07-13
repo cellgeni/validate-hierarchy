@@ -132,6 +132,9 @@ sample-tracking irods-validate /zone/collection/path
 # Validation with explicit schema file
 sample-tracking irods-validate /zone/collection/path --schema schema.yml
 
+# With an explicit iRODS environment (config) file
+sample-tracking irods-validate /zone/collection/path --schema schema.yml --config-file ~/.irods/irods_environment.json
+
 # Multiple collections at once
 sample-tracking irods-validate /path/collection1 /path/collection2 /path/collection3 --schema schema.yml
 
@@ -254,6 +257,7 @@ option.
 |--------|-------------|---------|
 | `collection` | iRODS collection path(s) - accepts multiple paths | Required |
 | `--schema` | Schema file path (YAML/JSON) | `IRODS_SCHEMA_FILE` env var |
+| `--config-file` | iRODS environment (config) file path | `IRODS_ENVIRONMENT_FILE` env var |
 | `--timeout` | iRODS connection timeout (seconds) | `120` |
 | `--log-file` | Path to log file for validation results | `irods_validation.log` |
 | `--report-format` | Output format (`text`, `markdown`) | `text` |

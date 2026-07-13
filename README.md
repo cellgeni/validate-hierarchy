@@ -64,7 +64,7 @@ IRODS_SCHEMA_FILE=/path/to/your/schema.yml
 
 ## Usage
 
-The tool provides two main commands: `update` for database operations and `irods-validate` for schema validation.
+The tool provides three main commands: `update` for database operations, `irods-validate` for validating iRODS collections against a schema, and `local-validate` for validating local filesystem directories against the same kind of schema.
 
 ### Sample Tracking (`update` command)
 
@@ -181,6 +181,42 @@ collections:
     description: "Sample directories"
 ```
 
+### Local Directory Validation (`local-validate` command)
+
+Validate local filesystem directories against the same schemas used for iRODS
+collections. This is useful for checking datasets on disk before they are
+uploaded to iRODS. Directories are validated recursively; files map to data
+objects and sub-directories map to sub-collections. Local directories carry no
+metadata, so schema `metadata_keys` should be left empty.
+
+```bash
+# Basic validation (using schema from IRODS_SCHEMA_FILE env variable)
+sample-tracking local-validate /path/to/dataset
+
+# Validation with explicit schema file
+sample-tracking local-validate /path/to/dataset --schema schema.yml
+
+# Multiple directories at once
+sample-tracking local-validate /data/ds1 /data/ds2 /data/ds3 --schema schema.yml
+
+# With progress bar
+sample-tracking local-validate /path/to/dataset --schema schema.yml --progress-bar
+
+# Save report to file
+sample-tracking local-validate /path/to/dataset --schema schema.yml --report validation_report.md --report-format markdown
+
+# Send email report
+sample-tracking local-validate /path/to/dataset --schema schema.yml --email user@example.com
+
+# Validate directories from a file list
+sample-tracking local-validate $(cat directories.txt) --schema schema.yml --progress-bar
+```
+
+The `local-validate` command shares its schema format, report formats
+(`text`/`markdown`), summary threshold (`--min-collection-summary`) and email
+options with `irods-validate`. It does not accept the iRODS-only `--timeout`
+option.
+
 ## Command Reference
 
 ### `update` Command Options
@@ -213,6 +249,19 @@ collections:
 | `--min-collection-summary` | Min collections to trigger summary report | `5` |
 | `--progress-bar` | Show progress bar during validation | `False` |
 
+### `local-validate` Command Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `directory` | Local directory path(s) - accepts multiple paths | Required |
+| `--schema` | Schema file path (YAML/JSON) | `IRODS_SCHEMA_FILE` env var |
+| `--log-file` | Path to log file for validation results | `local_validation.log` |
+| `--report-format` | Output format (`text`, `markdown`) | `text` |
+| `--email` | Email address(es) to send report to (space-separated) | None |
+| `--report` | Path to save validation report file | None |
+| `--min-collection-summary` | Min directories to trigger summary report | `5` |
+| `--progress-bar` | Show progress bar during validation | `False` |
+
 ## Development
 
 ### Project Structure
@@ -223,7 +272,8 @@ src/tracking/
 ├── __main__.py          # Entry point for python -m tracking
 ├── cli.py              # Command-line interface
 ├── config.py           # Configuration management
-├── irods.py            # iRODS validation logic
+├── irods.py            # iRODS validation logic (shared data model, schema, validation, renderers)
+├── local.py            # Local directory loader (builds the shared model from disk)
 ├── io/
 │   ├── __init__.py
 │   └── readers.py      # File reading utilities

@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 import logging
 import time
@@ -69,7 +70,7 @@ def init_parser() -> argparse.ArgumentParser:
         "--schema",
         type=str,
         default=None,
-        help="Path to the schema file (YAML or JSON)"
+        help="Path to the schema file (YAML or JSON). Defaults to IRODS_SCHEMA_FILE env variable."
     )
     irods_validate_parser.add_argument(
         "--timeout",
@@ -112,6 +113,11 @@ def init_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show a progress bar during validation",
     )
+    irods_validate_parser.add_argument(
+        "--no-exit",
+        action="store_true",
+        help="Always exit with status 0, even if some collections FAILED validation",
+    )
 
     # Subparser for local directory validation
     local_validate_parser = subparsers.add_parser(
@@ -127,7 +133,7 @@ def init_parser() -> argparse.ArgumentParser:
         "--schema",
         type=str,
         default=None,
-        help="Path to the schema file (YAML or JSON)"
+        help="Path to the schema file (YAML or JSON). Defaults to LOCAL_SCHEMA_FILE env variable."
     )
     local_validate_parser.add_argument(
         "--log-file",
@@ -163,6 +169,11 @@ def init_parser() -> argparse.ArgumentParser:
         "--progress-bar",
         action="store_true",
         help="Show a progress bar during validation",
+    )
+    local_validate_parser.add_argument(
+        "--no-exit",
+        action="store_true",
+        help="Always exit with status 0, even if some directories FAILED validation",
     )
 
     # Subparser for update command
@@ -232,24 +243,46 @@ def init_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def load_and_validate_schema(schema_arg: str | None) -> CollectionSchema | None:
+def load_and_validate_schema(
+    schema_arg: str | None,
+    env_var: str = "IRODS_SCHEMA_FILE",
+) -> CollectionSchema | None:
     """
-    Resolve the schema path from CLI arg or IRODS_SCHEMA_FILE env variable,
-    load it and validate it into a CollectionSchema. Returns None (and logs
-    an error) if no schema path can be resolved.
+    Resolve the schema path from the CLI arg or the given env variable, load it
+    and validate it into a CollectionSchema. Returns None (and logs an error)
+    if no schema path can be resolved.
+
+    Args:
+        schema_arg: Value of the --schema CLI option (may be None).
+        env_var: Name of the environment variable to fall back to for the
+            default schema path (e.g. IRODS_SCHEMA_FILE or LOCAL_SCHEMA_FILE).
     """
     logger = logging.getLogger(__name__)
-    if schema_arg is None and not os.environ.get("IRODS_SCHEMA_FILE"):
-        logger.error("Schema file must be provided via --schema or IRODS_SCHEMA_FILE env variable.")
-        return None
-
-    schema_path = schema_arg or os.environ.get("IRODS_SCHEMA_FILE")
+    schema_path = schema_arg or os.environ.get(env_var)
     if schema_path is None:
-        logger.error("Schema file path is None. This should not happen.")
+        logger.error("Schema file must be provided via --schema or %s env variable.", env_var)
         return None
 
     schema = load_schema_from_file(schema_path)
     return CollectionSchema.model_validate(schema)
+
+
+def any_failed(reports) -> bool:
+    """
+    Return True if any report represents a FAILED validation.
+
+    Reports are usually ValidationReport objects (checked via `.ok`), but the
+    iRODS network-failure path appends a plain dict with an 'errors' list, so
+    both shapes are handled.
+    """
+    for report in reports:
+        if isinstance(report, ValidationReport):
+            if not report.ok:
+                return True
+        elif isinstance(report, dict):
+            if report.get("errors"):
+                return True
+    return False
 
 
 def emit_reports(reports, args, subject: str) -> None:
@@ -372,9 +405,12 @@ def main() -> None:
 
             emit_reports(reports, args, subject="iRODS Validation Report")
 
+            if any_failed(reports) and not args.no_exit:
+                sys.exit(1)
+
         case "local-validate":
             # Load schema
-            schema = load_and_validate_schema(args.schema)
+            schema = load_and_validate_schema(args.schema, env_var="LOCAL_SCHEMA_FILE")
             if schema is None:
                 return
 
@@ -411,3 +447,6 @@ def main() -> None:
                         dir_iterable.set_postfix_str(f"Error: {dir_path}")
 
             emit_reports(reports, args, subject="Local Directory Validation Report")
+
+            if any_failed(reports) and not args.no_exit:
+                sys.exit(1)

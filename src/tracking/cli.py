@@ -12,7 +12,8 @@ from irods.session import iRODSSession
 from irods.exception import NetworkException
 from tracking.io import load_schema_from_file
 from tracking.update import update_samples
-from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, CollectionSchema
+from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, CollectionSchema, ValidationReport, ValidationIssue
+from tracking.local import load_collection_from_dir
 
 load_dotenv()
 
@@ -112,6 +113,58 @@ def init_parser() -> argparse.ArgumentParser:
         help="Show a progress bar during validation",
     )
 
+    # Subparser for local directory validation
+    local_validate_parser = subparsers.add_parser(
+        "local-validate",
+        help="Validate local directories against a schema"
+    )
+    local_validate_parser.add_argument(
+        "directory",
+        nargs="+",
+        help="Path to the local directory to validate"
+    )
+    local_validate_parser.add_argument(
+        "--schema",
+        type=str,
+        default=None,
+        help="Path to the schema file (YAML or JSON)"
+    )
+    local_validate_parser.add_argument(
+        "--log-file",
+        type=str,
+        default="local_validation.log",
+        help="Path to the log file for validation results (default: local_validation.log)",
+    )
+    local_validate_parser.add_argument(
+        "--report-format",
+        choices=["text", "markdown"],
+        default="text",
+        help="Format of the validation report output (default: text)",
+    )
+    local_validate_parser.add_argument(
+        "--email",
+        nargs="+",
+        default=None,
+        help="Email address to send the validation report to",
+    )
+    local_validate_parser.add_argument(
+        "--report",
+        type=str,
+        default=None,
+        help="Path to save the validation report",
+    )
+    local_validate_parser.add_argument(
+        "--min-collection-summary",
+        type=int,
+        default=5,
+        help="Minimum number of directories to trigger summary report (default: 5)",
+    )
+    local_validate_parser.add_argument(
+        "--progress-bar",
+        action="store_true",
+        help="Show a progress bar during validation",
+    )
+
     # Subparser for update command
     update_parser = subparsers.add_parser("update", help="Update the tracking database")
     update_parser.add_argument(
@@ -179,6 +232,63 @@ def init_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_and_validate_schema(schema_arg: str | None) -> CollectionSchema | None:
+    """
+    Resolve the schema path from CLI arg or IRODS_SCHEMA_FILE env variable,
+    load it and validate it into a CollectionSchema. Returns None (and logs
+    an error) if no schema path can be resolved.
+    """
+    logger = logging.getLogger(__name__)
+    if schema_arg is None and not os.environ.get("IRODS_SCHEMA_FILE"):
+        logger.error("Schema file must be provided via --schema or IRODS_SCHEMA_FILE env variable.")
+        return None
+
+    schema_path = schema_arg or os.environ.get("IRODS_SCHEMA_FILE")
+    if schema_path is None:
+        logger.error("Schema file path is None. This should not happen.")
+        return None
+
+    schema = load_schema_from_file(schema_path)
+    return CollectionSchema.model_validate(schema)
+
+
+def emit_reports(reports, args, subject: str) -> None:
+    """
+    Render, print, optionally save and optionally email a list of validation
+    reports. Shared between iRODS and local validation commands.
+    """
+    if args.report_format == "markdown":
+        text_report = render_markdown_report(reports)
+    else:
+        text_report = render_text_report(reports)
+
+    report_to_show = text_report if len(reports) < args.min_collection_summary else render_text_report_summarised(reports)
+    print(report_to_show)
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as f:
+            f.write(text_report)
+
+    if args.email:
+        msg = EmailMessage()
+        msg.set_content(report_to_show)
+        msg["Subject"] = subject
+        msg["From"] = "noreply-reprocessing@cellgeni-su"
+        msg["To"] = ", ".join(args.email)
+        if args.report:
+            with open(args.report, "rb") as f:
+                file_data = f.read()
+                file_name = os.path.basename(args.report)
+            msg.add_attachment(
+                file_data,
+                maintype="text",
+                subtype="plain",
+                filename=file_name
+            )
+
+        with smtplib.SMTP("localhost") as server:
+            server.send_message(msg)
+
+
 def main() -> None:
     # init the parser
     parser = init_parser()
@@ -199,19 +309,9 @@ def main() -> None:
             )
         case "irods-validate":
             # Load schema
-            if args.schema is None and not os.environ.get("IRODS_SCHEMA_FILE"):
-                logger.error("Schema file must be provided via --schema or IRODS_SCHEMA_FILE env variable.")
+            schema = load_and_validate_schema(args.schema)
+            if schema is None:
                 return
-
-            schema_path = args.schema or os.environ.get("IRODS_SCHEMA_FILE")
-            if schema_path is None:
-                logger.error("Schema file path is None. This should not happen.")
-                return
-                
-            schema = load_schema_from_file(schema_path)
-
-            # Validate schema
-            schema = CollectionSchema.model_validate(schema)
 
             # Validate collection
             env_file = os.environ.get("IRODS_ENVIRONMENT_FILE")
@@ -269,38 +369,45 @@ def main() -> None:
                         if args.progress_bar:
                             collection_iterable.set_postfix_str(f"Error: {collection_path}")
                         break  # Don't retry for non-network errors
-            # Also print a text summary to console
-            if args.report_format == "markdown":
-                text_report = render_markdown_report(reports)
-            else:
-                text_report = render_text_report(reports)
 
-            report_to_show = text_report if len(reports) < args.min_collection_summary else render_text_report_summarised(reports)
-            print(report_to_show)
-            if args.report:
-                with open(args.report, "w", encoding="utf-8") as f:
-                    f.write(text_report)
+            emit_reports(reports, args, subject="iRODS Validation Report")
 
-            # if args.email:
-            #     markdown_report = render_markdown_report(reports) if args.report_format != "markdown" else text_report
-            #     html = markdown.markdown(markdown_report)
-            if args.email:
-                msg = EmailMessage()
-                msg.set_content(report_to_show)
-                msg["Subject"] = "iRODS Validation Report"
-                msg["From"] = "noreply-reprocessing@cellgeni-su"
-                msg["To"] = ", ".join(args.email)
-                if args.report:
-                    with open(args.report, "rb") as f:
-                        file_data = f.read()
-                        file_name = os.path.basename(args.report)
-                    msg.add_attachment(
-                        file_data,
-                        maintype="text",
-                        subtype="plain",
-                        filename=file_name
-                    )
-                #msg.add_alternative(html, subtype="html")
+        case "local-validate":
+            # Load schema
+            schema = load_and_validate_schema(args.schema)
+            if schema is None:
+                return
 
-                with smtplib.SMTP("localhost") as server:
-                    server.send_message(msg)
+            reports = []
+            dir_iterable = tqdm(args.directory, desc="Validating directories", unit="directory") if args.progress_bar else args.directory
+
+            for dir_path in dir_iterable:
+                if args.progress_bar:
+                    dir_iterable.set_postfix_str(f"Processing: {dir_path}")
+
+                logger.info("Validating local directory: %s", dir_path)
+
+                try:
+                    collection_obj = load_collection_from_dir(dir_path)
+                    report = validate_collection(collection_obj, schema)
+                    reports.append(report)
+                    log_validation_report(report)
+                except (FileNotFoundError, NotADirectoryError) as e:
+                    logger.error(f"Cannot validate {dir_path}: {e}")
+                    reports.append(ValidationReport(
+                        path=dir_path,
+                        ok=False,
+                        issues=[ValidationIssue(
+                            path=dir_path,
+                            kind="missing_collections",
+                            message=str(e),
+                        )],
+                    ))
+                    if args.progress_bar:
+                        dir_iterable.set_postfix_str(f"Failed: {dir_path}")
+                except Exception as e:
+                    logger.error(f"Unexpected error validating {dir_path}: {e}")
+                    if args.progress_bar:
+                        dir_iterable.set_postfix_str(f"Error: {dir_path}")
+
+            emit_reports(reports, args, subject="Local Directory Validation Report")

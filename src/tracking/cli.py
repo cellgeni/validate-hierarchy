@@ -3,6 +3,7 @@ import sys
 import argparse
 import logging
 import time
+from importlib.metadata import version, PackageNotFoundError
 from logging.handlers import RotatingFileHandler
 from email.message import EmailMessage
 import smtplib
@@ -46,11 +47,24 @@ def setup_logging(
     root_logger.addHandler(handler)
 
 
+def get_version() -> str:
+    """Return the installed package version, falling back gracefully."""
+    try:
+        return version("tracking")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def init_parser() -> argparse.ArgumentParser:
     # Initialize the argument parser
     parser = argparse.ArgumentParser(
         prog="sample-tracking",
         description="A CLI tool for managing and tracking reprocessing datasets",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {get_version()}",
     )
 
     # Add subparsers for different commands

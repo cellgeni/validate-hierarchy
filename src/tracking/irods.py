@@ -85,6 +85,23 @@ def log_validation_report(
     logger.info("Validation %s (%s)", status, summary)
 
 
+def _relative_issue_path(issue_path: str, report_root: str) -> str:
+    """
+    Present the location of an issue relative to the report's root collection.
+
+    Issues carry the absolute path of the sub-collection they occurred in. When
+    that path is nested under the report root, show it relative to the root
+    (prefixed with the root's own name) so it is clear *which* subdirectory the
+    issue belongs to. The root itself is shown as ".".
+    """
+    if issue_path == report_root:
+        return "."
+    prefix = report_root.rstrip("/") + "/"
+    if issue_path.startswith(prefix):
+        return issue_path[len(prefix):]
+    return issue_path
+
+
 def render_text_report(reports: List[ValidationReport]) -> str:
     """
     Render a multi-collection validation report as a plain-text summary.
@@ -104,7 +121,9 @@ def render_text_report(reports: List[ValidationReport]) -> str:
         else:
             lines.append(f"Status: FAILED ❌ ({len(rep.issues)} issues)")
             for i, issue in enumerate(rep.issues, start=1):
-                lines.append(f"  [{i}] {issue.kind}: {issue.message}")
+                location = _relative_issue_path(issue.path, rep.path)
+                lines.append(f"  [{i}] {location}")
+                lines.append(f"      {issue.kind}: {issue.message}")
                 if issue.details:
                     lines.append(f"      details: {issue.details}")
         lines.append("")  # blank line between collections
@@ -157,7 +176,8 @@ def render_markdown_report(reports: List[ValidationReport]) -> str:
         else:
             lines.append(f"\n**Status:** ❌ FAILED ({len(rep.issues)} issues)\n")
             for issue in rep.issues:
-                lines.append(f"- **{issue.kind}** – {issue.message}")
+                location = _relative_issue_path(issue.path, rep.path)
+                lines.append(f"- `{location}` — **{issue.kind}** – {issue.message}")
                 if issue.details:
                     lines.append(f"  - details: `{issue.details}`")
         lines.append("")  # blank line

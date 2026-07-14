@@ -195,6 +195,12 @@ def init_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Always exit with status 0, even if some directories FAILED validation",
     )
+    local_validate_parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        help="Follow symlinked directories and files when walking the tree "
+             "(e.g. for Nextflow work directories)",
+    )
 
     # Subparser for update command
     update_parser = subparsers.add_parser("update", help="Update the tracking database")
@@ -444,7 +450,7 @@ def main() -> None:
                 logger.info("Validating local directory: %s", dir_path)
 
                 try:
-                    collection_obj = load_collection_from_dir(dir_path)
+                    collection_obj = load_collection_from_dir(dir_path, follow_symlinks=args.follow_symlinks)
                     report = validate_collection(collection_obj, schema)
                     reports.append(report)
                     log_validation_report(report)

@@ -40,9 +40,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.12-slim-bookworm AS runtime
 
 # psycopg2 needs the libpq runtime library (not the -dev headers).
+# procps provides `ps`, which Nextflow requires to collect task metrics.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpq5 \
+        procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Run as a non-root user.
@@ -63,5 +65,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 USER tracking
 
-ENTRYPOINT ["sample-tracking"]
-CMD ["--help"]
+# No ENTRYPOINT: Nextflow invokes its own `.command.sh` via the shell and needs
+# to run arbitrary commands (e.g. `sample-tracking`, `cat`, `ps`). A hardcoded
+# ENTRYPOINT would be prepended to every command under the Docker executor.
+CMD ["bash"]

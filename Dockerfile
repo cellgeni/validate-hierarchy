@@ -30,6 +30,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Now copy the source and install the project itself.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY schema ./schema
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
@@ -52,10 +53,13 @@ WORKDIR /app
 # Copy the fully-built virtualenv and the project source from the builder.
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+COPY --from=builder /app/schema /app/schema
 
 # Put the virtualenv on PATH so the `sample-tracking` entry point is available.
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    LOCAL_SCHEMA_FILE="/app/schema/local_dataset_root.yml" \
+    IRODS_SCHEMA_FILE="/app/schema/dataset_root.yml"
 
 USER tracking
 

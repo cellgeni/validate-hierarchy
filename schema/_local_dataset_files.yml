@@ -12,7 +12,7 @@
   max: 1
 
 - pattern: '^.*solo.qc.?\.tsv$'
-  min: 1
+  min: 0
   max: 2
 
 - pattern: '^.*(?:sdrf|idf)\.txt$'

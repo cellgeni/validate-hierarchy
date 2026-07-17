@@ -34,6 +34,10 @@ def load_collection_from_dir(path: str, follow_symlinks: bool = False) -> IrodsC
         raise FileNotFoundError(f"Directory does not exist: {path}")
     if not root.is_dir():
         raise NotADirectoryError(f"Path is not a directory: {path}")
+    # Make the root absolute without resolving symlinks so that reported paths
+    # reflect the logical traversal path (as given by the user) rather than the
+    # physical targets of any symlinks followed with --follow-symlinks.
+    root = Path(os.path.abspath(root))
     return _collection_from_dir(root, follow_symlinks=follow_symlinks)
 
 
@@ -52,7 +56,7 @@ def _collection_from_dir(directory: Path, follow_symlinks: bool = False) -> Irod
     stat = directory.stat()
     return IrodsCollection(
         name=directory.name,
-        path=PurePosixPath(directory.resolve().as_posix()),
+        path=PurePosixPath(directory.as_posix()),
         create_time=datetime.fromtimestamp(getattr(stat, "st_ctime", stat.st_mtime)),
         modify_time=datetime.fromtimestamp(stat.st_mtime),
         metadata={},

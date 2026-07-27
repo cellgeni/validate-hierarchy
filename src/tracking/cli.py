@@ -14,7 +14,7 @@ from irods.session import iRODSSession
 from irods.exception import NetworkException
 from tracking.io import load_schema_from_file
 from tracking.update import update_samples
-from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, CollectionSchema, ValidationReport, ValidationIssue
+from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, collect_extra_paths, CollectionSchema, ValidationReport, ValidationIssue
 from tracking.local import load_collection_from_dir
 
 load_dotenv()
@@ -138,6 +138,12 @@ def init_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Always exit with status 0, even if some collections FAILED validation",
     )
+    irods_validate_parser.add_argument(
+        "--extra-paths-file",
+        type=str,
+        default=None,
+        help="Path to write the full paths of unexpected files/collections found during validation, one per line",
+    )
 
     # Subparser for local directory validation
     local_validate_parser = subparsers.add_parser(
@@ -200,6 +206,12 @@ def init_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Follow symlinked directories and files when walking the tree "
              "(e.g. for Nextflow work directories)",
+    )
+    local_validate_parser.add_argument(
+        "--extra-paths-file",
+        type=str,
+        default=None,
+        help="Path to write the full paths of unexpected files/collections found during validation, one per line",
     )
 
     # Subparser for update command
@@ -326,6 +338,13 @@ def emit_reports(reports, args, subject: str) -> None:
     if args.report:
         with open(args.report, "w", encoding="utf-8") as f:
             f.write(text_report)
+
+    if args.extra_paths_file:
+        extra_paths = collect_extra_paths(reports)
+        with open(args.extra_paths_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(extra_paths))
+            if extra_paths:
+                f.write("\n")
 
     if args.email:
         msg = EmailMessage()

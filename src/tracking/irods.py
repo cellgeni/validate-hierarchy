@@ -102,6 +102,27 @@ def _relative_issue_path(issue_path: str, report_root: str) -> str:
     return issue_path
 
 
+def collect_extra_paths(reports: List[ValidationReport]) -> List[str]:
+    """
+    Collect the full paths of all unexpected files/collections found across
+    a list of validation reports (i.e. the 'extra' entries not matched by
+    any schema rule).
+    """
+    paths: List[str] = []
+    for rep in reports:
+        if not isinstance(rep, ValidationReport):
+            continue
+        for issue in rep.issues:
+            if issue.kind == "unexpected_files":
+                names = issue.details.get("unexpected_files", [])
+            elif issue.kind == "unexpected_collections":
+                names = issue.details.get("unexpected_collections", [])
+            else:
+                continue
+            paths.extend(f"{issue.path.rstrip('/')}/{name}" for name in names)
+    return paths
+
+
 def render_text_report(reports: List[ValidationReport]) -> str:
     """
     Render a multi-collection validation report as a plain-text summary.

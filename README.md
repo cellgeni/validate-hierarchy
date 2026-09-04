@@ -1,439 +1,378 @@
-# Track Reprocessing
+# validate-hierarchy
 
-A CLI tool for managing and tracking reprocessed datasets with support for database operations and iRODS collection validation.
+Validate directory and iRODS collection hierarchies against a declarative YAML
+schema.
 
-## Overview
+You describe the shape you expect — regex name patterns plus `min`/`max`
+cardinalities for files and sub-collections at every level — and
+`validate-hierarchy` walks the real tree and reports everything that does not
+match: missing files, files that appear too many times, unexpected extra
+entries, misnamed collections, and (for iRODS) missing metadata keys.
 
-This project provides a command-line interface for:
-- **Database Management**: Update sample tracking records in a PostgreSQL database from CSV/JSON files
-- **iRODS Validation**: Validate iRODS collections against predefined schemas to ensure data integrity
+Both backends share the same schema format and the same data model, so a
+dataset can be checked on disk before upload and again in iRODS afterwards.
 
-The tool is designed for bioinformatics workflows where sample data needs to be tracked and validated across different storage systems.
-
-## Features
-
-- **Sample Tracking**: Batch update sample records with configurable status tracking
-- **Schema Validation**: Validate iRODS collections against YAML/JSON schemas
-- **Database Integration**: PostgreSQL support with SQLAlchemy ORM
-- **Flexible Input**: Support for both CSV and JSON input formats
-- **Dry Run Mode**: Test operations without making actual changes
-- **Configurable Logging**: Detailed logging with file rotation and customizable levels
-- **Progress Tracking**: Visual progress bars for long-running validation operations
-- **Email Reporting**: Send validation reports via email with file attachments
-- **Multiple Output Formats**: Generate reports in text or markdown format
-- **Batch Processing**: Validate multiple collections in a single command
+> **Note**
+> This tool was split out of the combined `sample-tracking` CLI. The database
+> tracking side (PostgreSQL models, `update` command) is not part of this
+> package; the last combined version is preserved on the `legacy` git tag.
 
 ## Installation
 
-### Requirements
+```bash
+# Local filesystem validation only
+pip install validate-hierarchy
 
-- Python 3.12 or higher
-- PostgreSQL database (for sample tracking)
-- iRODS environment (for collection validation)
+# With iRODS support
+pip install 'validate-hierarchy[irods]'
+```
 
-### Install Dependencies
+Requires Python 3.12+. `python-irodsclient` is an optional extra so that the
+common local-validation case stays dependency-light; the `irods` subcommand
+prints an install hint if the extra is missing.
+
+### From source
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd track_reprocessing
-
-# Install using uv (recommended)
-uv pip install -e .
-
-# Or install using pip
-pip install -e .
+git clone https://github.com/cellgeni/validate-hierarchy.git
+cd validate-hierarchy
+uv sync --all-extras
+uv run validate-hierarchy --help
 ```
 
-### Environment Setup
-
-Create a `.env` file in the project root with the following variables:
-
-```env
-# Database configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=your_username
-DB_PASSWORD=your_password
-DB_NAME=reprocessing
-
-# iRODS configuration
-IRODS_ENVIRONMENT_FILE=/path/to/your/.irods/irods_environment.json
-IRODS_SCHEMA_FILE=/path/to/your/schema.yml
-
-# Local directory validation configuration
-LOCAL_SCHEMA_FILE=/path/to/your/local_schema.yml
-```
-
-`irods-validate` and `local-validate` use **separate** default schemas:
-`irods-validate` falls back to `IRODS_SCHEMA_FILE` and `local-validate` falls
-back to `LOCAL_SCHEMA_FILE` when `--schema` is not given. Neither command falls
-back to the other's variable.
-
-## Usage
-
-The tool provides three main commands: `update` for database operations, `irods-validate` for validating iRODS collections against a schema, and `local-validate` for validating local filesystem directories against the same kind of schema.
-
-### Sample Tracking (`update` command)
-
-Update sample records in the database from input files:
+## Quick start
 
 ```bash
-# Basic usage with CSV file
-sample-tracking update samples.csv --format csv
+# Validate one directory
+validate-hierarchy local /data/GSE123456 --schema schema/local_dataset_root.yml
 
-# JSON input with custom batch size
-sample-tracking update samples.json --format json --batch-size 50
-
-# Dry run to validate input without database changes
-sample-tracking update samples.csv --dry-run
-
-# Custom database connection
-sample-tracking update samples.csv \
-    --db-host localhost \
-    --db-port 5432 \
-    --db-user myuser \
-    --db-password mypass \
-    --db-name tracking
-
-# Set default status for new records
-sample-tracking update samples.csv --status-default pending
-```
-
-#### Input File Format
-
-**CSV Format:**
-```csv
-sample_name,dataset_name,status,batch_id
-sample001,GSE123456,success,batch_01
-sample002,GSE123456,pending,batch_01
-```
-
-**JSON Format:**
-```json
-[
-  {
-    "sample_name": "sample001",
-    "dataset_name": "GSE123456", 
-    "status": "success",
-    "batch_id": "batch_01"
-  }
-]
-```
-
-### iRODS Collection Validation (`irods-validate` command)
-
-Validate iRODS collections against predefined schemas:
-
-```bash
-# Basic validation (using schema from IRODS_SCHEMA_FILE env variable)
-sample-tracking irods-validate /zone/collection/path
-
-# Validation with explicit schema file
-sample-tracking irods-validate /zone/collection/path --schema schema.yml
-
-# With an explicit iRODS environment (config) file
-sample-tracking irods-validate /zone/collection/path --schema schema.yml --config-file ~/.irods/irods_environment.json
-
-# Multiple collections at once
-sample-tracking irods-validate /path/collection1 /path/collection2 /path/collection3 --schema schema.yml
-
-# With progress bar
-sample-tracking irods-validate /zone/collection/path --schema schema.yml --progress-bar
-
-# Save report to file
-sample-tracking irods-validate /zone/collection/path --schema schema.yml --report validation_report.md --report-format markdown
-
-# Send email report
-sample-tracking irods-validate /zone/collection/path --schema schema.yml --email user@example.com admin@example.com
-
-# Complete example with all features
-sample-tracking irods-validate /path/collection1 /path/collection2 \
-    --schema validation_schema.yml \
+# Validate many, with a progress bar and a saved report
+validate-hierarchy local /data/GSE* \
+    --schema schema/local_dataset_root.yml \
     --progress-bar \
-    --report-format markdown \
-    --report validation_results.md \
-    --email alice@example.com bob@example.com \
-    --timeout 300 \
-    --log-file validation.log
+    --report report.txt
 
-# Validate collections from a file list
-sample-tracking irods-validate $(cat collections.txt) --schema schema.yml --progress-bar
+# Validate iRODS collections
+validate-hierarchy irods /archive/cellgeni/datasets/GSE123456 \
+    --schema schema/dataset_root.yml
 ```
 
-#### Schema Format
+The exit status is `0` when everything passed and `1` when any path failed, so
+the command drops straight into CI pipelines and cron jobs. Pass `--no-exit` to
+always exit `0` (e.g. when you only want the report emailed).
 
-Schemas are defined in YAML or JSON format. Example schema (`schema.yml`):
+## Schema format
+
+A schema is a nested description of one collection. Every level accepts:
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `name` | A [name rule](#name-rules) the collection's own name must match | matches anything |
+| `data_objects` | List of name rules for the files directly inside | `[]` |
+| `collections` | List of nested schemas for the sub-collections | `[]` |
+| `metadata_keys` | Metadata (AVU) keys that must be present — iRODS only | `[]` |
+| `allow_extra_files` | Permit files matched by no rule | `false` |
+| `allow_extra_collections` | Permit sub-collections matched by no rule | `false` |
+
+### Name rules
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `pattern` | Python regex, applied with `fullmatch` | required |
+| `min` | Fewest entries that must match | `1` |
+| `max` | Most entries that may match; `null` means unbounded | `null` |
+| `description` | Free-text note, ignored by validation | — |
+
+Unknown keys are rejected, so a typo like `data_object:` fails loudly instead
+of silently matching nothing.
 
 ```yaml
 name:
   pattern: '^(?:GSE|E-MTAB-|EGAD|PRJEB|PRJNA|HRA)\d+$'
 
-metadata_keys: []
-
 data_objects:
   - pattern: '^.*(?:ena|sra)\.tsv$'
     min: 1
     max: 2
-    description: "ENA/SRA metadata files"
-  - pattern: '^.*family\.soft$'
-    min: 0
-    max: 1
-    description: "SOFT family files"
   - pattern: '^.*parsed\.tsv$'
     min: 1
     max: 1
-    description: "Parsed metadata"
 
 collections:
-  - pattern: '^sample_\d+$'
-    min: 1
-    max: null
-    description: "Sample directories"
+  - name:
+      pattern: '^(SRS|GSM|ERS)\d+$'
+      min: 1
+      max: null          # any number of samples
+    data_objects:
+      - pattern: '^Log\.final\.out$'
+        min: 1
+        max: 1
+    allow_extra_files: false
+    allow_extra_collections: false
+
+allow_extra_files: false
+allow_extra_collections: false
 ```
 
-### Local Directory Validation (`local-validate` command)
+### Reusing blocks
 
-Validate local filesystem directories against the same *kind* of schema used
-for iRODS collections (see the schema format above). This is useful for checking
-datasets on disk before they are uploaded to iRODS. Directories are validated
-recursively; files map to data objects and sub-directories map to
-sub-collections. Local directories carry no metadata, so schema `metadata_keys`
-should be left empty.
+Real hierarchies repeat themselves. Both of these mechanisms are supported, and
+they can be mixed freely in the same schema.
 
-The default schema for `local-validate` comes from the `LOCAL_SCHEMA_FILE`
-environment variable (separate from `irods-validate`'s `IRODS_SCHEMA_FILE`), so
-each command can have its own default schema. Override either with `--schema`.
+**1. YAML anchors and aliases** — plain YAML, one self-contained file. Declare a
+block once with `&name` and reuse it with `*name`:
+
+```yaml
+collections:
+  - name: {pattern: '^Gene$', min: 1, max: 1}
+    data_objects: &gene_files          # declare
+      - pattern: '^Features\.stats$'
+        min: 1
+        max: 1
+      - pattern: '^Summary\.csv$'
+        min: 1
+        max: 1
+
+  - name: {pattern: 'GeneFull$', min: 1, max: 1}
+    data_objects: *gene_files          # reuse
+```
+
+Mapping keys starting with `_` or `x-` are ignored by the loader, so a schema
+can also keep a section that exists purely to host anchors:
+
+```yaml
+_definitions:
+  matrix_files: &matrix_files
+    - pattern: '^barcodes\.tsv\.gz$'
+      min: 1
+      max: 1
+    - pattern: '^matrix\.mtx\.gz$'
+      min: 1
+      max: 1
+
+collections:
+  - name: {pattern: '^raw$'}
+    data_objects: *matrix_files
+```
+
+See [schema/dataset_root.anchored.yml](schema/dataset_root.anchored.yml) for a
+full anchored schema.
+
+**2. `!include` directives** — split a schema over several files. Paths resolve
+relative to the *including* file and may nest:
+
+```yaml
+# dataset_root.yml
+name:
+  pattern: '^(?:GSE|E-MTAB-|EGAD|PRJEB|PRJNA|HRA)\d+$'
+data_objects: !include _dataset_files.yml
+collections:  !include _sample_collections.yml
+```
+
+See [schema/dataset_root.yml](schema/dataset_root.yml) and its `_*.yml`
+fragments.
+
+Anchors are resolved by the YAML parser per file, so an alias cannot refer to an
+anchor declared in a different file. Use `!include` to share across files and
+anchors to share within one.
+
+JSON schema files also work, since JSON is a subset of YAML.
+
+## Commands
+
+### `validate-hierarchy local`
+
+Validates local filesystem directories. Files map to data objects and
+sub-directories to sub-collections. Local directories carry no metadata, so
+leave `metadata_keys` empty.
 
 ```bash
-# Basic validation (using schema from LOCAL_SCHEMA_FILE env variable)
-sample-tracking local-validate /path/to/dataset
+validate-hierarchy local /data/ds1 /data/ds2 --schema schema.yml
 
-# Validation with explicit schema file
-sample-tracking local-validate /path/to/dataset --schema schema.yml
+# Nextflow work directories are built from symlinks
+validate-hierarchy local work/ab/cdef... --schema schema.yml --follow-symlinks
 
-# Multiple directories at once
-sample-tracking local-validate /data/ds1 /data/ds2 /data/ds3 --schema schema.yml
-
-# With progress bar
-sample-tracking local-validate /path/to/dataset --schema schema.yml --progress-bar
-
-# Save report to file
-sample-tracking local-validate /path/to/dataset --schema schema.yml --report validation_report.md --report-format markdown
-
-# Send email report
-sample-tracking local-validate /path/to/dataset --schema schema.yml --email user@example.com
-
-# Validate directories from a file list
-sample-tracking local-validate $(cat directories.txt) --schema schema.yml --progress-bar
+# Validate a list of directories from a file
+mapfile -t dirs < directories.txt
+validate-hierarchy local "${dirs[@]}" --schema schema.yml --progress-bar
 ```
-
-The `local-validate` command shares its schema format, report formats
-(`text`/`markdown`), summary threshold (`--min-collection-summary`) and email
-options with `irods-validate`. It does not accept the iRODS-only `--timeout`
-option.
-
-## Command Reference
-
-### `update` Command Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `path` | Path to input file (CSV/JSON) | Required |
-| `--format` | Input file format (`csv`, `json`) | `csv` |
-| `--db-url` | Database host URL | `DB_HOST` env var |
-| `--db-port` | Database port | `5432` or `DB_PORT` env var |
-| `--db-user` | Database username | `DB_USER` env var |
-| `--db-password` | Database password | `DB_PASSWORD` env var |
-| `--db-name` | Database name | `reprocessing` or `DB_NAME` env var |
-| `--batch-size` | Records per batch | `100` |
-| `--dry-run` | Validate without updating | `False` |
-| `--status-default` | Default status for new records | `pending` |
-| `--log-file` | Path to log file for update process | `update.log` |
+| `directory` | Directory path(s); accepts many | required |
+| `--follow-symlinks` | Follow symlinked directories and files when walking | `false` |
 
-### `irods-validate` Command Options
+Reported paths reflect the logical traversal path you passed in, not the
+physical symlink targets.
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `collection` | iRODS collection path(s) - accepts multiple paths | Required |
-| `--schema` | Schema file path (YAML/JSON) | `IRODS_SCHEMA_FILE` env var |
-| `--config-file` | iRODS environment (config) file path | `IRODS_ENVIRONMENT_FILE` env var |
-| `--timeout` | iRODS connection timeout (seconds) | `120` |
-| `--log-file` | Path to log file for validation results | `irods_validation.log` |
-| `--report-format` | Output format (`text`, `markdown`) | `text` |
-| `--email` | Email address(es) to send report to (space-separated) | None |
-| `--report` | Path to save validation report file | None |
-| `--min-collection-summary` | Min collections to trigger summary report | `5` |
-| `--progress-bar` | Show progress bar during validation | `False` |
-| `--no-exit` | Always exit `0`, even if some collections FAILED | `False` |
+### `validate-hierarchy irods`
 
-### `local-validate` Command Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `directory` | Local directory path(s) - accepts multiple paths | Required |
-| `--schema` | Schema file path (YAML/JSON) | `LOCAL_SCHEMA_FILE` env var |
-| `--log-file` | Path to log file for validation results | `local_validation.log` |
-| `--report-format` | Output format (`text`, `markdown`) | `text` |
-| `--email` | Email address(es) to send report to (space-separated) | None |
-| `--report` | Path to save validation report file | None |
-| `--min-collection-summary` | Min directories to trigger summary report | `5` |
-| `--progress-bar` | Show progress bar during validation | `False` |
-| `--no-exit` | Always exit `0`, even if some directories FAILED | `False` |
-
-### Exit Codes
-
-Both `irods-validate` and `local-validate` exit with status `1` when any
-collection/directory has a FAILED validation status, and `0` otherwise. This
-makes them usable in CI pipelines and cron scripts. Pass `--no-exit` to always
-exit `0` regardless of validation results (e.g. when you only want the report
-emailed and don't want a non-zero status to abort a wrapper script).
-
-## Development
-
-### Project Structure
-
-```
-src/tracking/
-├── __init__.py
-├── __main__.py          # Entry point for python -m tracking
-├── cli.py              # Command-line interface
-├── config.py           # Configuration management
-├── irods.py            # iRODS validation logic (shared data model, schema, validation, renderers)
-├── local.py            # Local directory loader (builds the shared model from disk)
-├── io/
-│   ├── __init__.py
-│   └── readers.py      # File reading utilities
-├── models/
-│   ├── __init__.py
-│   └── samples.py      # Database models
-├── queries/
-│   ├── __init__.py
-│   ├── crud.py         # Database operations
-│   └── session.py      # Database session management
-└── update/
-    ├── __init__.py
-    └── samples.py      # Sample update logic
-```
-
-### Running from Source
+Validates iRODS collections. Requires the `irods` extra. Transient network
+failures are retried; a collection that still cannot be read is reported as a
+`load_error` rather than silently skipped.
 
 ```bash
-# Run as module
-python -m tracking update samples.csv
+validate-hierarchy irods /zone/collection/path --schema schema.yml
 
-# Run directly
-python src/tracking/cli.py update samples.csv
-```
-
-### Testing
-
-```bash
-# Dry run to test input validation
-sample-tracking update test_samples.csv --dry-run
-
-# Validate with progress bar and save report
-sample-tracking irods-validate /test/collection --schema test_schema.yml --progress-bar --report test_results.md
-
-# Validate multiple collections with email notification
-sample-tracking irods-validate /collection1 /collection2 /collection3 \
+# Explicit iRODS environment file and a longer timeout
+validate-hierarchy irods /zone/coll \
     --schema schema.yml \
-    --progress-bar \
-    --email admin@example.com \
-    --report-format markdown
+    --config-file ~/.irods/irods_environment.json \
+    --timeout 300
 
-# Validate collections from file list
+# Validate every dataset collection in a zone
+iquest --no-page "SELECT COLL_NAME WHERE COLL_PARENT_NAME = '/archive/cellgeni/datasets'" \
+  | grep -v '^--' | awk -F' = ' '{print $2}' | sort > collections.txt
 mapfile -t collections < collections.txt
-sample-tracking irods-validate "${collections[@]}" --schema schema.yml --progress-bar
+validate-hierarchy irods "${collections[@]}" --progress-bar
 ```
 
-## Advanced Usage
+| Option | Description | Default |
+|--------|-------------|---------|
+| `collection` | iRODS collection path(s); accepts many | required |
+| `--config-file` | iRODS environment file | `IRODS_ENVIRONMENT_FILE` env var |
+| `--timeout` | Connection timeout, seconds | `120` |
+| `--retries` | Attempts per collection on network errors | `3` |
+| `--retry-delay` | Seconds between retries | `15` |
 
-### Multiple Collection Validation
+### Shared options
 
-You can validate multiple collections in several ways:
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--schema` | Schema file path | `LOCAL_SCHEMA_FILE` / `IRODS_SCHEMA_FILE` env var |
+| `--report` | Path to save the full report | none |
+| `--report-format` | Saved report format (`text`, `markdown`) | `text` |
+| `--min-collection-summary` | Path count at or above which stdout/email is summarised | `5` |
+| `--extra-paths-file` | Write the full path of every unexpected entry, one per line | none |
+| `--email` | Recipient address(es) for the report | none |
+| `--email-from` | Sender address | `VALIDATE_HIERARCHY_EMAIL_FROM` or `noreply@localhost` |
+| `--email-subject` | Subject line | per-command default |
+| `--smtp-host` | SMTP host | `VALIDATE_HIERARCHY_SMTP_HOST` or `localhost` |
+| `--log-file` | Log file path | `local_validation.log` / `irods_validation.log` |
+| `--log-level` | Log verbosity (`debug`, `info`, `warning`, `error`) | `info` |
+| `--progress-bar` | Show a progress bar | `false` |
+| `--no-exit` | Always exit `0`, even on failures | `false` |
+
+`--report` always contains the full per-path detail. What is printed to stdout
+and emailed switches to a summary once the number of paths reaches
+`--min-collection-summary`, so a nightly sweep over thousands of collections
+emails counts rather than a wall of text.
+
+`--extra-paths-file` is useful for follow-up work — feed it into a cleanup or
+archival step to act on entries the schema did not expect.
+
+## Environment variables
+
+Read from the environment and from a `.env` file in the working directory (see
+[.env.example](.env.example)):
+
+| Variable | Purpose |
+|----------|---------|
+| `LOCAL_SCHEMA_FILE` | Default `--schema` for `local` |
+| `IRODS_SCHEMA_FILE` | Default `--schema` for `irods` |
+| `IRODS_ENVIRONMENT_FILE` | Default `--config-file` for `irods` |
+| `VALIDATE_HIERARCHY_EMAIL_FROM` | Default `--email-from` |
+| `VALIDATE_HIERARCHY_SMTP_HOST` | Default `--smtp-host` |
+
+The two schema variables are independent: neither subcommand falls back to the
+other's.
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Everything passed (or `--no-exit` was given) |
+| `1` | At least one path FAILED validation |
+| `2` | Bad invocation: unusable/missing schema, missing `irods` extra, bad arguments |
+
+## Issue kinds
+
+Every issue in a report carries a `kind`, which is also its log level:
+
+| Kind | Level | Meaning |
+|------|-------|---------|
+| `load_error` | error | The path could not be read at all |
+| `name_mismatch` | error | Collection name does not match its `pattern` |
+| `missing_files` | error | Fewer than `min` files matched a rule |
+| `too_many_files` | error | More than `max` files matched a rule |
+| `unexpected_files` | warning | Files matched by no rule, with `allow_extra_files: false` |
+| `missing_collections` | error | Fewer than `min` sub-collections matched |
+| `too_many_collections` | error | More than `max` sub-collections matched |
+| `unexpected_collections` | warning | Sub-collections matched by no rule |
+| `missing_metadata_keys` | error | Required AVU keys absent (iRODS only) |
+
+Any issue, warning-level included, makes a report FAILED.
+
+## Docker
 
 ```bash
-# Direct multiple arguments
-sample-tracking irods-validate /path/coll1 /path/coll2 /path/coll3 --schema schema.yml
-
-# From a file containing collection paths (one per line)
-sample-tracking irods-validate $(cat collections.txt) --schema schema.yml
-
-# Using bash arrays for complex processing
-mapfile -t collections < <(find /archive -name "GSE*" -type d | head -10)
-sample-tracking irods-validate "${collections[@]}" --schema schema.yml --progress-bar
+docker build -t validate-hierarchy .
+docker run --rm -v /data:/data validate-hierarchy \
+    validate-hierarchy local /data/GSE123456
 ```
 
-### Email Reports
+The image installs the `irods` extra, bundles the example schemas under
+`/app/schema`, and presets `LOCAL_SCHEMA_FILE` and `IRODS_SCHEMA_FILE` so
+`--schema` can be omitted. There is no `ENTRYPOINT`, so Nextflow can run
+arbitrary commands under the Docker executor.
 
-Send validation results via email:
+## Python API
+
+```python
+from validate_hierarchy import (
+    load_schema_from_file,
+    load_collection_from_dir,
+    validate_collection,
+    render_text_report,
+)
+
+schema = load_schema_from_file("schema/local_dataset_root.yml")
+collection = load_collection_from_dir("/data/GSE123456")
+report = validate_collection(collection, schema)
+
+print(report.ok, len(report.issues))
+print(render_text_report([report]))
+```
+
+## Project structure
+
+```
+src/validate_hierarchy/
+├── __init__.py          # Public API
+├── __main__.py          # python -m validate_hierarchy
+├── cli.py               # Argument parsing and command orchestration
+├── models.py            # Collection, CollectionSchema, NameRule, reports
+├── schema.py            # Schema loading (!include, anchors) and validation
+├── validate.py          # Recursive collection-vs-schema validation
+├── report.py            # Logging and text/markdown rendering
+└── sources/
+    ├── local.py         # Build a Collection from the filesystem
+    └── irods.py         # Build a Collection from iRODS (optional extra)
+
+schema/                  # Example schemas for Cellgeni reprocessing datasets
+scripts/cron.bsub        # LSF job that sweeps an iRODS zone nightly
+```
+
+## Releasing
+
+Releases are published to PyPI by
+[.github/workflows/publish.yml](.github/workflows/publish.yml) on a `v*` tag,
+using PyPI Trusted Publishing (OIDC) — no API token in repository secrets.
+
+Before the first release, register a trusted publisher on PyPI with owner
+`cellgeni`, repository `validate-hierarchy`, workflow `publish.yml` and
+environment `pypi`. Then:
 
 ```bash
-# Single recipient
-sample-tracking irods-validate /collection --email user@example.com
-
-# Multiple recipients
-sample-tracking irods-validate /collection --email admin@example.com user@example.com
-
-# With file attachment
-sample-tracking irods-validate /collection \
-    --email admin@example.com \
-    --report validation_results.md \
-    --report-format markdown
+uv version --bump minor    # updates pyproject.toml
+git commit -am "Release v0.2.0"
+git tag v0.2.0
+git push origin main --tags
 ```
 
-### Progress Tracking
-
-For long-running validations, use the progress bar:
-
-```bash
-# Basic progress bar
-sample-tracking irods-validate /large/collection --progress-bar
-
-# Progress bar shows current collection being processed
-sample-tracking irods-validate /coll1 /coll2 /coll3 --progress-bar
-```
-
-Example output:
-```
-Validating collections: 67%|██████▋   | 2/3 [00:30<00:15] Processing: GSE123456
-```
-
-## Logging
-
-The tool uses Python's logging module with INFO level by default. Logs include:
-- Sample update operations and results
-- Validation reports with issue counts
-- Database connection status
-- Error details for troubleshooting
-
-### Log File Configuration
-
-Each command generates its own log file:
-- `irods-validate`: Uses `irods_validation.log` by default
-- `update`: Uses `update.log` by default
-
-Configure log files with the `--log-file` option:
-
-```bash
-# Custom log file for validation
-sample-tracking irods-validate /collection --log-file my_validation.log
-
-# Custom log file for updates  
-sample-tracking update data.csv --log-file my_update.log
-```
-
-Log files automatically rotate when they reach 10MB, keeping 5 backup files.
+The workflow refuses to publish if the tag does not match the version in
+`pyproject.toml`.
 
 ## License
 
-See the [LICENSE](LICENSE) file for licensing information.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+MIT — see [LICENSE](LICENSE).

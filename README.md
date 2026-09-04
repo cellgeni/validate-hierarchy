@@ -185,6 +185,33 @@ JSON schema files also work, since JSON is a subset of YAML.
 > user running the command can read. Don't run the tool against a schema from an
 > untrusted source.
 
+### Converting between the two forms
+
+`validate-hierarchy flatten` resolves every `!include` and re-emits the schema
+as one self-contained file, turning fragments used more than once into anchors:
+
+```bash
+# Print the flattened schema
+validate-hierarchy flatten schema/dataset_root.yml
+
+# Write it to a file
+validate-hierarchy flatten schema/dataset_root.yml -o schema/dataset_root.anchored.yml
+```
+
+A fragment is anchored under its filename, so `_gene_files.yml` included twice
+becomes `&gene_files` at its first use and `*gene_files` after. Existing anchor
+names in the input are kept, which makes the command idempotent — flattening an
+already-flat schema returns it unchanged.
+
+The output is checked to parse back to exactly the data the original produced
+before anything is written, so a conversion either round-trips or fails with
+exit 2. Note that YAML comments are not preserved: the parser discards them, so
+they cannot be carried into the output.
+
+There is no reverse command. Splitting a schema into fragments requires
+deciding where the seams go, which is a judgement call rather than a
+transformation.
+
 ## Commands
 
 ### `validate-hierarchy local`
@@ -241,6 +268,19 @@ validate-hierarchy irods "${collections[@]}" --progress-bar
 | `--timeout` | Connection timeout, seconds | `120` |
 | `--retries` | Attempts per collection on network errors | `3` |
 | `--retry-delay` | Seconds between retries | `15` |
+
+### `validate-hierarchy flatten`
+
+Rewrites an `!include`-based schema as a single anchored file. See
+[Converting between the two forms](#converting-between-the-two-forms).
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `schema` | Path to the schema file to flatten | required |
+| `-o`, `--output` | Write to this file instead of standard output | stdout |
+
+This subcommand takes none of the shared options below: it rewrites a file
+rather than validating a tree, so it produces no report and writes no log.
 
 ### Shared options
 
@@ -350,6 +390,7 @@ src/validate_hierarchy/
 ├── cli.py               # Argument parsing and command orchestration
 ├── models.py            # Collection, CollectionSchema, NameRule, reports
 ├── schema.py            # Schema loading (!include, anchors) and validation
+├── flatten.py           # Rewrites an !include schema as one anchored file
 ├── validate.py          # Recursive collection-vs-schema validation
 ├── report.py            # Logging and text/markdown rendering
 └── sources/

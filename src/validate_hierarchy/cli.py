@@ -262,6 +262,24 @@ def init_parser() -> argparse.ArgumentParser:
         help="Seconds to wait between network-error retries (default: 15)",
     )
 
+    # ---- schema conversion --------------------------------------------------
+    flatten = subparsers.add_parser(
+        "flatten",
+        help="Rewrite an !include-based schema as one anchored file",
+        description="Resolve every !include in a schema and re-emit it as a "
+                    "single self-contained file, using YAML anchors so "
+                    "fragments used more than once are still written once. "
+                    "The result is checked to parse back to identical data "
+                    "before it is written.",
+    )
+    flatten.add_argument("schema", help="Path to the schema file to flatten")
+    flatten.add_argument(
+        "-o", "--output",
+        type=str,
+        default=None,
+        help="Write to this file instead of standard output",
+    )
+
     return parser
 
 
@@ -451,10 +469,34 @@ def emit_reports(reports: list[ValidationReport], args: argparse.Namespace) -> N
         )
 
 
+def run_flatten(args: argparse.Namespace) -> int:
+    """Flatten a schema to stdout or `--output`. Returns the exit status."""
+    from validate_hierarchy.flatten import flatten_schema
+
+    try:
+        text = flatten_schema(args.schema)
+    except SchemaError as exc:
+        print(f"{PROG}: error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"Wrote {args.output}", file=sys.stderr)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns the process exit status."""
     parser = init_parser()
     args = parser.parse_args(argv)
+
+    # `flatten` rewrites a file rather than validating a tree: it wants no log
+    # file, no schema resolution from the environment and no report.
+    if args.command == "flatten":
+        return run_flatten(args)
 
     setup_logging(
         log_file=args.log_file or args.log_file_default,

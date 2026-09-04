@@ -9,13 +9,21 @@ from email.message import EmailMessage
 import smtplib
 from tqdm import tqdm
 from dotenv import load_dotenv
+from pydantic import ValidationError
 from irods.session import iRODSSession
 from irods.exception import NetworkException
-from tracking.io import load_schema_from_file
+from tracking.io import SchemaError, load_schema_from_file
 from tracking.irods import load_collection_from_irods, validate_collection, log_validation_report, render_text_report_summarised, render_text_report, render_markdown_report, collect_extra_paths, CollectionSchema, ValidationReport, ValidationIssue
 from tracking.local import load_collection_from_dir
 
 load_dotenv()
+
+#: Exit status when at least one path FAILED validation.
+EXIT_VALIDATION_FAILED = 1
+#: Exit status for a bad invocation: unusable or missing schema. argparse uses
+#: the same code for malformed arguments.
+EXIT_USAGE = 2
+
 
 def setup_logging(
     log_file: str = "tracking.log",
@@ -218,25 +226,45 @@ def init_parser() -> argparse.ArgumentParser:
 def load_and_validate_schema(
     schema_arg: str | None,
     env_var: str = "IRODS_SCHEMA_FILE",
-) -> CollectionSchema | None:
+) -> CollectionSchema:
     """
     Resolve the schema path from the CLI arg or the given env variable, load it
-    and validate it into a CollectionSchema. Returns None (and logs an error)
-    if no schema path can be resolved.
+    and validate it into a CollectionSchema.
 
     Args:
         schema_arg: Value of the --schema CLI option (may be None).
         env_var: Name of the environment variable to fall back to for the
             default schema path (e.g. IRODS_SCHEMA_FILE or LOCAL_SCHEMA_FILE).
+
+    Raises:
+        SchemaError: If no path can be resolved, or the schema is invalid.
     """
-    logger = logging.getLogger(__name__)
     schema_path = schema_arg or os.environ.get(env_var)
     if schema_path is None:
-        logger.error("Schema file must be provided via --schema or %s env variable.", env_var)
-        return None
+        raise SchemaError(
+            f"No schema given. Pass --schema or set the {env_var} environment variable."
+        )
 
-    schema = load_schema_from_file(schema_path)
-    return CollectionSchema.model_validate(schema)
+    data = load_schema_from_file(schema_path)
+    try:
+        return CollectionSchema.model_validate(data)
+    except ValidationError as exc:
+        raise SchemaError(f"Invalid schema in {schema_path}:\n{format_errors(exc)}") from exc
+
+
+def format_errors(exc: ValidationError) -> str:
+    """
+    Render pydantic errors as one indented, location-prefixed line each.
+    """
+    lines = []
+    seen = set()
+    for error in exc.errors():
+        location = ".".join(str(part) for part in error["loc"]) or "<root>"
+        line = f"  {location}: {error['msg']}"
+        if line not in seen:
+            seen.add(line)
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def load_error_report(path: str, message: str) -> ValidationReport:
@@ -313,9 +341,12 @@ def main() -> None:
     match args.command:
         case "irods-validate":
             # Load schema
-            schema = load_and_validate_schema(args.schema)
-            if schema is None:
-                return
+            try:
+                schema = load_and_validate_schema(args.schema)
+            except SchemaError as exc:
+                logger.error("%s", exc)
+                print(f"sample-tracking: error: {exc}", file=sys.stderr)
+                sys.exit(EXIT_USAGE)
 
             # Validate collection
             env_file = args.config_file or os.environ.get("IRODS_ENVIRONMENT_FILE")
@@ -377,13 +408,16 @@ def main() -> None:
             emit_reports(reports, args, subject="iRODS Validation Report")
 
             if any_failed(reports) and not args.no_exit:
-                sys.exit(1)
+                sys.exit(EXIT_VALIDATION_FAILED)
 
         case "local-validate":
             # Load schema
-            schema = load_and_validate_schema(args.schema, env_var="LOCAL_SCHEMA_FILE")
-            if schema is None:
-                return
+            try:
+                schema = load_and_validate_schema(args.schema, env_var="LOCAL_SCHEMA_FILE")
+            except SchemaError as exc:
+                logger.error("%s", exc)
+                print(f"sample-tracking: error: {exc}", file=sys.stderr)
+                sys.exit(EXIT_USAGE)
 
             reports = []
             dir_iterable = tqdm(args.directory, desc="Validating directories", unit="directory") if args.progress_bar else args.directory
@@ -413,4 +447,4 @@ def main() -> None:
             emit_reports(reports, args, subject="Local Directory Validation Report")
 
             if any_failed(reports) and not args.no_exit:
-                sys.exit(1)
+                sys.exit(EXIT_VALIDATION_FAILED)

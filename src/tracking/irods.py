@@ -210,6 +210,8 @@ class NameRule(BaseModel):
     """
     Represents a naming rule with a regex pattern and occurrence constraints.
     """
+    model_config = ConfigDict(extra="forbid")
+
     pattern: Pattern[str]
     min: int = 1
     max: Optional[int] = None
@@ -253,6 +255,8 @@ class IrodsCollection(BaseModel):
     
 
 class CollectionSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: 'NameRule' = Field(default_factory=lambda: NameRule(pattern=re.compile(r'.*'), min=1, max=None))
     metadata_keys: Set[str] = Field(default_factory=set)
     data_objects: List['NameRule'] = Field(default_factory=list)

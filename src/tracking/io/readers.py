@@ -3,6 +3,12 @@ from pathlib import Path
 import yaml
 
 
+class SchemaError(Exception):
+    """
+    Raised when a schema file cannot be read or does not describe a schema.
+    """
+
+
 class IncludeLoader(yaml.SafeLoader):
     """
     YAML Loader with !include support
@@ -23,8 +29,11 @@ def _construct_include(loader: IncludeLoader, node: yaml.nodes.ScalarNode):
     """
     filename = loader.construct_scalar(node)
     filepath = (loader._root / filename).resolve()
-    with open(filepath, "r", encoding="utf-8") as f:
-        return yaml.load(f, IncludeLoader)
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return yaml.load(f, IncludeLoader)
+    except OSError as exc:
+        raise SchemaError(f"Cannot read included schema file {filepath}: {exc}") from exc
 
 
 IncludeLoader.add_constructor("!include", _construct_include)
@@ -35,9 +44,17 @@ def load_schema_from_file(path: str) -> Dict[str, Any]:
     Load a YAML schema from a file, supporting !include directives
     Args:
         path (str): Path to the schema file (YAML)
+
+    Raises:
+        SchemaError: If the file cannot be read or is not valid YAML
+
     Returns:
         Dict[str, Any]: The loaded schema as a dictionary
     """
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.load(f, Loader=IncludeLoader)
-    return data
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.load(f, Loader=IncludeLoader)
+    except OSError as exc:
+        raise SchemaError(f"Cannot read schema file {path}: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise SchemaError(f"Invalid YAML in schema file {path}: {exc}") from exc

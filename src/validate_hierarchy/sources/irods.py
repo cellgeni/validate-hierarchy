@@ -1,13 +1,38 @@
-"""Build a `Collection` tree from iRODS."""
+"""Build a `Collection` tree from iRODS.
+
+`python-irodsclient` is an optional dependency, so it is imported lazily: the
+rest of the package (and the `local` subcommand) works without it.
+"""
 
 from collections import defaultdict
 
-from irods.session import iRODSSession
-
 from validate_hierarchy.models import Collection
 
+IRODS_INSTALL_HINT = (
+    "iRODS support requires the optional 'irods' extra:\n"
+    "    pip install 'validate-hierarchy[irods]'"
+)
 
-def load_collection_from_irods(session: iRODSSession, path: str) -> Collection:
+
+class IrodsSupportError(RuntimeError):
+    """Raised when iRODS is requested but `python-irodsclient` is not installed."""
+
+
+def require_irods() -> tuple[type, type]:
+    """Import and return `(iRODSSession, NetworkException)`.
+
+    Raises:
+        IrodsSupportError: if `python-irodsclient` is not installed.
+    """
+    try:
+        from irods.exception import NetworkException
+        from irods.session import iRODSSession
+    except ImportError as exc:  # pragma: no cover - depends on install extras
+        raise IrodsSupportError(IRODS_INSTALL_HINT) from exc
+    return iRODSSession, NetworkException
+
+
+def load_collection_from_irods(session, path: str) -> Collection:
     """Load a `Collection` tree from iRODS starting at `path`."""
     return _collection_from_irods(session.collections.get(path))
 

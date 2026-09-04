@@ -7,10 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.12.4",
     "python-dotenv>=1.1.1",
-    "python-irodsclient>=3.2.0",
     "pyyaml>=6.0.3",
     "tqdm>=4.67.1",
 ]
+
+[project.optional-dependencies]
+irods = ["python-irodsclient>=3.2.0"]
 
 [project.scripts]
 validate-hierarchy = "validate_hierarchy.cli:main"

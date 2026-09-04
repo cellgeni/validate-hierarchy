@@ -11,8 +11,6 @@ from email.message import EmailMessage
 from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
-from irods.exception import NetworkException
-from irods.session import iRODSSession
 from tqdm import tqdm
 
 from validate_hierarchy import __version__
@@ -30,7 +28,6 @@ from validate_hierarchy.report import (
     render_text_report_summarised,
 )
 from validate_hierarchy.schema import SchemaError, load_schema_from_file
-from validate_hierarchy.sources.irods import load_collection_from_irods
 from validate_hierarchy.sources.local import load_collection_from_dir
 from validate_hierarchy.validate import validate_collection
 
@@ -40,8 +37,8 @@ PROG = "validate-hierarchy"
 
 #: Exit status when at least one path FAILED validation.
 EXIT_VALIDATION_FAILED = 1
-#: Exit status for a bad invocation: unusable or missing schema. argparse uses
-#: the same code for malformed arguments.
+#: Exit status for a bad invocation: unusable schema, missing iRODS extra, etc.
+#: (argparse uses the same code for malformed arguments.)
 EXIT_USAGE = 2
 
 DEFAULT_EMAIL_FROM = "noreply@localhost"
@@ -201,8 +198,10 @@ def init_parser() -> argparse.ArgumentParser:
     # ---- iRODS --------------------------------------------------------------
     irods = subparsers.add_parser(
         "irods",
-        help="Validate iRODS collections against a schema",
-        description="Validate iRODS collections against a schema.",
+        help="Validate iRODS collections against a schema (requires the "
+             "'irods' extra)",
+        description="Validate iRODS collections against a schema. Requires "
+                    "python-irodsclient: pip install 'validate-hierarchy[irods]'",
     )
     irods.set_defaults(
         schema_env="IRODS_SCHEMA_FILE",
@@ -314,6 +313,13 @@ def validate_irods_paths(
     timeout: int, retries: int, retry_delay: int, progress_bar: bool,
 ) -> list[ValidationReport]:
     """Validate each iRODS collection, retrying transient network failures."""
+    from validate_hierarchy.sources.irods import (
+        load_collection_from_irods,
+        require_irods,
+    )
+
+    irods_session, network_exception = require_irods()
+
     logger = logging.getLogger(__name__)
     reports: list[ValidationReport] = []
     iterable = _progress(collections, progress_bar, unit="collection")
@@ -324,7 +330,7 @@ def validate_irods_paths(
 
         for attempt in range(1, retries + 1):
             try:
-                with iRODSSession(irods_env_file=env_file) as session:
+                with irods_session(irods_env_file=env_file) as session:
                     session.connection_timeout = timeout
                     collection = load_collection_from_irods(session, path)
                 report = validate_collection(collection, schema)
@@ -332,7 +338,7 @@ def validate_irods_paths(
                 log_validation_report(report)
                 break
 
-            except NetworkException as exc:
+            except network_exception as exc:
                 if attempt < retries:
                     logger.warning(
                         "Network error for collection %s (attempt %d/%d): %s. "
@@ -449,15 +455,22 @@ def main(argv: list[str] | None = None) -> int:
             progress_bar=args.progress_bar,
         )
     else:
-        reports = validate_irods_paths(
-            args.collection,
-            schema,
-            env_file=args.config_file or os.environ.get("IRODS_ENVIRONMENT_FILE"),
-            timeout=args.timeout,
-            retries=args.retries,
-            retry_delay=args.retry_delay,
-            progress_bar=args.progress_bar,
-        )
+        from validate_hierarchy.sources.irods import IrodsSupportError
+
+        try:
+            reports = validate_irods_paths(
+                args.collection,
+                schema,
+                env_file=args.config_file or os.environ.get("IRODS_ENVIRONMENT_FILE"),
+                timeout=args.timeout,
+                retries=args.retries,
+                retry_delay=args.retry_delay,
+                progress_bar=args.progress_bar,
+            )
+        except IrodsSupportError as exc:
+            logger.error("%s", exc)
+            print(f"{PROG}: error: {exc}", file=sys.stderr)
+            return EXIT_USAGE
 
     emit_reports(reports, args)
 

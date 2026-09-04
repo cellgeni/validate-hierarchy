@@ -265,9 +265,9 @@ validate-hierarchy irods "${collections[@]}" --schema schema.yml --progress-bar
 |--------|-------------|---------|
 | `collection` | iRODS collection path(s); accepts many | required |
 | `--config-file` | iRODS environment file | `IRODS_ENVIRONMENT_FILE` env var |
-| `--timeout` | Connection timeout, seconds | `120` |
-| `--retries` | Attempts per collection on network errors | `3` |
-| `--retry-delay` | Seconds between retries | `15` |
+| `--timeout` | Connection timeout, seconds; 1 or more | `120` |
+| `--retries` | Attempts per collection on network errors; 1 or more | `3` |
+| `--retry-delay` | Seconds between retries; 0 or more | `15` |
 
 ### `validate-hierarchy flatten`
 
@@ -289,7 +289,7 @@ rather than validating a tree, so it produces no report and writes no log.
 | `--schema` | Schema file path | required |
 | `--report` | Path to save the full report | none |
 | `--report-format` | Saved report format (`text`, `markdown`) | `text` |
-| `--min-collection-summary` | Path count at or above which stdout/email is summarised | `5` |
+| `--min-collection-summary` | Path count at or above which stdout/email is summarised; 0 or more | `5` |
 | `--extra-paths-file` | Write the full path of every unexpected entry, one per line | none |
 | `--email` | Recipient address(es) for the report | none |
 | `--email-from` | Sender address | `VALIDATE_HIERARCHY_EMAIL_FROM` or `noreply@localhost` |
@@ -329,7 +329,7 @@ not choose.
 |------|---------|
 | `0` | Everything passed (or `--no-exit` was given) |
 | `1` | At least one path FAILED validation |
-| `2` | Bad invocation: unusable/missing schema, missing `irods` extra, bad arguments |
+| `2` | Bad invocation: missing or unusable schema, missing `irods` extra, malformed or out-of-range arguments |
 
 ## Issue kinds
 

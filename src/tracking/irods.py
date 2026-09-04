@@ -13,6 +13,7 @@ ISSUE_LEVELS: Dict[str, int] = {
     "load_error":             logging.ERROR,
     "name_mismatch":          logging.ERROR,
     "missing_files":          logging.ERROR,
+    "too_many_files":         logging.ERROR,
     "unexpected_files":       logging.WARNING,
     "missing_collections":    logging.ERROR,
     "too_many_collections":   logging.ERROR,
@@ -28,7 +29,7 @@ class ValidationIssue(BaseModel):
     path: str
     kind: Literal[
         "load_error",
-        "name_mismatch", "missing_files", "unexpected_files",
+        "name_mismatch", "missing_files", "too_many_files", "unexpected_files",
         "missing_collections", "too_many_collections", "unexpected_collections",
         "missing_metadata_keys"
     ]
@@ -301,7 +302,7 @@ def validate_collection(collection: IrodsCollection, schema: CollectionSchema) -
         if rule.max is not None and len(matches) > rule.max:
             issues.append(ValidationIssue(
                 path=str(collection.path),
-                kind="unexpected_files",
+                kind="too_many_files",
                 message=f"Expected at most {rule.max} files matching '{rule.pattern.pattern}', found {len(matches)}",
                 details={"expected_pattern": rule.pattern.pattern, "found": matches}
             ))

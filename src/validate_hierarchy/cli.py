@@ -45,6 +45,25 @@ DEFAULT_EMAIL_FROM = "noreply@localhost"
 DEFAULT_SMTP_HOST = "localhost"
 
 
+def _bounded_int(minimum: int):
+    """Build an argparse type that rejects integers below `minimum`.
+
+    Out-of-range values become a usage error (exit 2) rather than silently
+    degenerating: `--retries 0`, for instance, would otherwise skip every
+    collection and report success.
+    """
+    def parse(value: str) -> int:
+        try:
+            number = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{value!r} is not an integer") from None
+        if number < minimum:
+            raise argparse.ArgumentTypeError(f"must be {minimum} or greater, got {number}")
+        return number
+
+    return parse
+
+
 def setup_logging(
     log_file: str,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
@@ -109,7 +128,7 @@ def _add_common_arguments(parser: argparse.ArgumentParser, noun: str) -> None:
     )
     parser.add_argument(
         "--min-collection-summary",
-        type=int,
+        type=_bounded_int(0),
         default=5,
         help=f"Number of {noun} at or above which the printed/emailed report is "
              "summarised instead of listed in full (default: 5)",
@@ -222,20 +241,20 @@ def init_parser() -> argparse.ArgumentParser:
     )
     irods.add_argument(
         "--timeout",
-        type=int,
+        type=_bounded_int(1),
         default=120,
         help="Connection timeout for the iRODS session (default: 120 seconds)",
     )
     irods.add_argument(
         "--retries",
-        type=int,
+        type=_bounded_int(1),
         default=3,
         help="Attempts per collection before giving up on network errors "
              "(default: 3)",
     )
     irods.add_argument(
         "--retry-delay",
-        type=int,
+        type=_bounded_int(0),
         default=15,
         help="Seconds to wait between network-error retries (default: 15)",
     )

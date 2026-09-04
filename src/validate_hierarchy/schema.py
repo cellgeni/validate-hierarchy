@@ -32,6 +32,13 @@ usable together in the same schema**:
 Anchors are resolved per file by the YAML parser, so an alias cannot refer to
 an anchor declared in a different file; use ``!include`` to share across files
 and anchors to share within one.
+
+Schema files are trusted input: ``!include`` paths are not confined to the
+including file's directory, so a schema can pull in a fragment from a shared
+parent directory (``!include ../common/_files.yml``) or an absolute path. That
+reads files with the privileges of whoever runs the command, which is also
+whoever supplies the schema — do not point the tool at a schema from an
+untrusted source.
 """
 
 from pathlib import Path

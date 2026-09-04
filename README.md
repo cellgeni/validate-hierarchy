@@ -178,6 +178,13 @@ anchors to share within one.
 
 JSON schema files also work, since JSON is a subset of YAML.
 
+> **Note**
+> Schema files are trusted input. `!include` paths are deliberately not confined
+> to the including file's directory, so `!include ../common/_files.yml` and
+> absolute paths both work — which also means a schema can read any file the
+> user running the command can read. Don't run the tool against a schema from an
+> untrusted source.
+
 ## Commands
 
 ### `validate-hierarchy local`

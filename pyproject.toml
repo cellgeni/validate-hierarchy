@@ -1,25 +1,67 @@
 [project]
-name = "tracking"
-version = "0.1.2"
-description = "Add your description here"
+name = "validate-hierarchy"
+version = "0.2.0"
+description = "Validate directory and iRODS collection hierarchies against a declarative YAML schema"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Cellular Genomics Informatics", email = "cellgeni@sanger.ac.uk" },
+]
+keywords = [
+    "validation",
+    "schema",
+    "directory-structure",
+    "filesystem",
+    "irods",
+    "bioinformatics",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: System :: Filesystems",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
 dependencies = [
-    "dotenv>=0.9.9",
-    "markdown>=3.10",
-    "psycopg2>=2.9.10",
     "pydantic>=2.12.4",
     "python-dotenv>=1.1.1",
-    "python-irodsclient>=3.2.0",
     "pyyaml>=6.0.3",
-    "rich>=14.2.0",
-    "sqlalchemy>=2.0.43",
     "tqdm>=4.67.1",
 ]
 
+[project.optional-dependencies]
+irods = ["python-irodsclient>=3.2.0"]
+
+[project.urls]
+Homepage = "https://github.com/cellgeni/validate-hierarchy"
+Repository = "https://github.com/cellgeni/validate-hierarchy"
+Issues = "https://github.com/cellgeni/validate-hierarchy/issues"
+
 [project.scripts]
-sample-tracking = "tracking.cli:main"
+validate-hierarchy = "validate_hierarchy.cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RET", "DTZ", "BLE"]

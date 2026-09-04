@@ -17,5 +17,5 @@ iquest --no-page "SELECT COLL_NAME WHERE COLL_PARENT_NAME = '/archive/cellgeni/d
 
 # Validate all collections listed in logs/collections.txt
 mapfile -t collections < logs/collections.txt
-sample-tracking irods-validate "${collections[@]}" --email 'ab76@sanger.ac.uk' 'ap41@sanger.ac.uk' --report logs/report.txt --log-file logs/validation_details.log --min-collection-summary 7 --progress-bar
+validate-hierarchy irods "${collections[@]}" --schema schema/dataset_root.yml --email 'ab76@sanger.ac.uk' 'ap41@sanger.ac.uk' --report logs/report.txt --log-file logs/validation_details.log --min-collection-summary 7 --progress-bar
 

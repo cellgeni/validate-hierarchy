@@ -20,6 +20,13 @@ __pycache__/
 Dockerfile
 .dockerignore
 
+# Build artifacts
+build/
+dist/
+
+# CI config not needed in the image
+.github/
+
 # Large data / logs / generated artifacts not needed in the image
 *.log
 logs/

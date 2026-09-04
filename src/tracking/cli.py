@@ -239,22 +239,22 @@ def load_and_validate_schema(
     return CollectionSchema.model_validate(schema)
 
 
+def load_error_report(path: str, message: str) -> ValidationReport:
+    """
+    Build a FAILED report for a path that could not even be read.
+    """
+    return ValidationReport(
+        path=path,
+        ok=False,
+        issues=[ValidationIssue(path=path, kind="load_error", message=message)],
+    )
+
+
 def any_failed(reports) -> bool:
     """
     Return True if any report represents a FAILED validation.
-
-    Reports are usually ValidationReport objects (checked via `.ok`), but the
-    iRODS network-failure path appends a plain dict with an 'errors' list, so
-    both shapes are handled.
     """
-    for report in reports:
-        if isinstance(report, ValidationReport):
-            if not report.ok:
-                return True
-        elif isinstance(report, dict):
-            if report.get("errors"):
-                return True
-    return False
+    return any(not report.ok for report in reports)
 
 
 def emit_reports(reports, args, subject: str) -> None:
@@ -358,18 +358,18 @@ def main() -> None:
                             logger.error(
                                 f"Failed to validate {collection_path} after {max_retries} attempts: {e}"
                             )
-                            # Create error report for failed collection
-                            error_report = {
-                                'collection': collection_path,
-                                'errors': [f"Network error after {max_retries} retries: {str(e)}"],
-                                'warnings': []
-                            }
-                            reports.append(error_report)
+                            reports.append(load_error_report(
+                                collection_path,
+                                f"Network error after {max_retries} attempts: {e}",
+                            ))
                             if args.progress_bar:
                                 collection_iterable.set_postfix_str(f"Failed: {collection_path}")
-                    
+
                     except Exception as e:
                         logger.error(f"Unexpected error validating {collection_path}: {e}")
+                        reports.append(load_error_report(
+                            collection_path, f"{type(e).__name__}: {e}"
+                        ))
                         if args.progress_bar:
                             collection_iterable.set_postfix_str(f"Error: {collection_path}")
                         break  # Don't retry for non-network errors
@@ -399,21 +399,14 @@ def main() -> None:
                     report = validate_collection(collection_obj, schema)
                     reports.append(report)
                     log_validation_report(report)
-                except (FileNotFoundError, NotADirectoryError) as e:
+                except OSError as e:
                     logger.error(f"Cannot validate {dir_path}: {e}")
-                    reports.append(ValidationReport(
-                        path=dir_path,
-                        ok=False,
-                        issues=[ValidationIssue(
-                            path=dir_path,
-                            kind="missing_collections",
-                            message=str(e),
-                        )],
-                    ))
+                    reports.append(load_error_report(dir_path, str(e)))
                     if args.progress_bar:
                         dir_iterable.set_postfix_str(f"Failed: {dir_path}")
                 except Exception as e:
                     logger.error(f"Unexpected error validating {dir_path}: {e}")
+                    reports.append(load_error_report(dir_path, f"{type(e).__name__}: {e}"))
                     if args.progress_bar:
                         dir_iterable.set_postfix_str(f"Error: {dir_path}")
 

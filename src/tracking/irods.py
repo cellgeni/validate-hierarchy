@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 
 ISSUE_LEVELS: Dict[str, int] = {
+    "load_error":             logging.ERROR,
     "name_mismatch":          logging.ERROR,
     "missing_files":          logging.ERROR,
     "unexpected_files":       logging.WARNING,
@@ -26,6 +27,7 @@ class ValidationIssue(BaseModel):
     """
     path: str
     kind: Literal[
+        "load_error",
         "name_mismatch", "missing_files", "unexpected_files",
         "missing_collections", "too_many_collections", "unexpected_collections",
         "missing_metadata_keys"
@@ -110,8 +112,6 @@ def collect_extra_paths(reports: List[ValidationReport]) -> List[str]:
     """
     paths: List[str] = []
     for rep in reports:
-        if not isinstance(rep, ValidationReport):
-            continue
         for issue in rep.issues:
             if issue.kind == "unexpected_files":
                 names = issue.details.get("unexpected_files", [])

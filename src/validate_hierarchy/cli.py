@@ -74,6 +74,9 @@ def setup_logging(
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
+        # Close as well as detach: a second call would otherwise leak the file
+        # descriptor of the previous log file.
+        handler.close()
 
     handler = RotatingFileHandler(
         filename=log_file, maxBytes=max_bytes, backupCount=backup_count

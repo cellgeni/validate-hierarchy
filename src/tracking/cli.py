@@ -7,7 +7,6 @@ from importlib.metadata import version, PackageNotFoundError
 from logging.handlers import RotatingFileHandler
 from email.message import EmailMessage
 import smtplib
-import markdown
 from tqdm import tqdm
 from dotenv import load_dotenv
 from irods.session import iRODSSession

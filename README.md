@@ -258,7 +258,7 @@ validate-hierarchy irods /zone/coll \
 iquest --no-page "SELECT COLL_NAME WHERE COLL_PARENT_NAME = '/archive/cellgeni/datasets'" \
   | grep -v '^--' | awk -F' = ' '{print $2}' | sort > collections.txt
 mapfile -t collections < collections.txt
-validate-hierarchy irods "${collections[@]}" --progress-bar
+validate-hierarchy irods "${collections[@]}" --schema schema.yml --progress-bar
 ```
 
 | Option | Description | Default |
@@ -286,7 +286,7 @@ rather than validating a tree, so it produces no report and writes no log.
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--schema` | Schema file path | `LOCAL_SCHEMA_FILE` / `IRODS_SCHEMA_FILE` env var |
+| `--schema` | Schema file path | required |
 | `--report` | Path to save the full report | none |
 | `--report-format` | Saved report format (`text`, `markdown`) | `text` |
 | `--min-collection-summary` | Path count at or above which stdout/email is summarised | `5` |
@@ -315,14 +315,13 @@ Read from the environment and from a `.env` file in the working directory (see
 
 | Variable | Purpose |
 |----------|---------|
-| `LOCAL_SCHEMA_FILE` | Default `--schema` for `local` |
-| `IRODS_SCHEMA_FILE` | Default `--schema` for `irods` |
 | `IRODS_ENVIRONMENT_FILE` | Default `--config-file` for `irods` |
 | `VALIDATE_HIERARCHY_EMAIL_FROM` | Default `--email-from` |
 | `VALIDATE_HIERARCHY_SMTP_HOST` | Default `--smtp-host` |
 
-The two schema variables are independent: neither subcommand falls back to the
-other's.
+`--schema` has no environment default and no built-in fallback: it is always
+given explicitly, so a run cannot silently validate against a schema you did
+not choose.
 
 ## Exit codes
 
@@ -355,12 +354,12 @@ Any issue, warning-level included, makes a report FAILED.
 ```bash
 docker build -t validate-hierarchy .
 docker run --rm -v /data:/data validate-hierarchy \
-    validate-hierarchy local /data/GSE123456
+    validate-hierarchy local /data/GSE123456 --schema /app/schema/local_dataset_root.yml
 ```
 
-The image installs the `irods` extra, bundles the example schemas under
-`/app/schema`, and presets `LOCAL_SCHEMA_FILE` and `IRODS_SCHEMA_FILE` so
-`--schema` can be omitted. There is no `ENTRYPOINT`, so Nextflow can run
+The image installs the `irods` extra and bundles the example schemas under
+`/app/schema`, but does not point `--schema` at any of them — pass the one you
+want, or mount your own. There is no `ENTRYPOINT`, so Nextflow can run
 arbitrary commands under the Docker executor.
 
 ## Python API

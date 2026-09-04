@@ -100,9 +100,8 @@ def _add_common_arguments(parser: argparse.ArgumentParser, noun: str) -> None:
     parser.add_argument(
         "--schema",
         type=str,
-        default=None,
-        help="Path to the schema file (YAML with !include and/or anchors, or JSON). "
-             f"Defaults to the {parser.get_default('schema_env')} env variable.",
+        required=True,
+        help="Path to the schema file (YAML with !include and/or anchors, or JSON)",
     )
     parser.add_argument(
         "--log-file",
@@ -201,7 +200,6 @@ def init_parser() -> argparse.ArgumentParser:
                     "sub-collections.",
     )
     local.set_defaults(
-        schema_env="LOCAL_SCHEMA_FILE",
         log_file_default="local_validation.log",
         email_subject_default="Local Directory Validation Report",
         summary_title="Local Directory Validation Report",
@@ -226,7 +224,6 @@ def init_parser() -> argparse.ArgumentParser:
                     "python-irodsclient: pip install 'validate-hierarchy[irods]'",
     )
     irods.set_defaults(
-        schema_env="IRODS_SCHEMA_FILE",
         log_file_default="irods_validation.log",
         email_subject_default="iRODS Validation Report",
         summary_title="iRODS Validation Report",
@@ -281,21 +278,6 @@ def init_parser() -> argparse.ArgumentParser:
     )
 
     return parser
-
-
-def resolve_schema(args: argparse.Namespace) -> CollectionSchema:
-    """Resolve the schema path from `--schema` or the subcommand's env variable.
-
-    Raises:
-        SchemaError: if no path can be resolved, or the schema is invalid.
-    """
-    schema_path = args.schema or os.environ.get(args.schema_env)
-    if schema_path is None:
-        raise SchemaError(
-            f"No schema given. Pass --schema or set the {args.schema_env} "
-            "environment variable."
-        )
-    return load_schema_from_file(schema_path)
 
 
 def _progress(paths: list[str], enabled: bool, unit: str):
@@ -505,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     logger = logging.getLogger(__name__)
 
     try:
-        schema = resolve_schema(args)
+        schema = load_schema_from_file(args.schema)
     except SchemaError as exc:
         logger.error("%s", exc)
         print(f"{PROG}: error: {exc}", file=sys.stderr)

@@ -50,11 +50,10 @@ COPY --from=builder /app/src /app/src
 COPY --from=builder /app/schema /app/schema
 
 # Put the virtualenv on PATH so the `validate-hierarchy` entry point is
-# available, and point the two subcommands at the bundled example schemas.
+# available. The example schemas are bundled under /app/schema but are not
+# wired to a default: --schema is always explicit.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    LOCAL_SCHEMA_FILE="/app/schema/local_dataset_root.yml" \
-    IRODS_SCHEMA_FILE="/app/schema/dataset_root.yml" \
     VALIDATE_HIERARCHY_EMAIL_FROM="noreply-reprocessing@cellgeni-su"
 
 USER validate

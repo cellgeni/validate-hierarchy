@@ -1,7 +1,7 @@
 [project]
-name = "tracking"
+name = "validate-hierarchy"
 version = "0.1.2"
-description = "Add your description here"
+description = "Validate directory and iRODS collection hierarchies against a declarative YAML schema"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sample-tracking = "tracking.cli:main"
+validate-hierarchy = "validate_hierarchy.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.9.0"]

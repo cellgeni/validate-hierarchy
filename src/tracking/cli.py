@@ -24,6 +24,9 @@ EXIT_VALIDATION_FAILED = 1
 #: the same code for malformed arguments.
 EXIT_USAGE = 2
 
+DEFAULT_EMAIL_FROM = "noreply@localhost"
+DEFAULT_SMTP_HOST = "localhost"
+
 
 def setup_logging(
     log_file: str = "tracking.log",
@@ -123,6 +126,26 @@ def init_parser() -> argparse.ArgumentParser:
         help="Email address to send the validation report to",
     )
     irods_validate_parser.add_argument(
+        "--email-from",
+        type=str,
+        default=os.environ.get("VALIDATION_EMAIL_FROM", DEFAULT_EMAIL_FROM),
+        help="Sender address for emailed reports (default: VALIDATION_EMAIL_FROM "
+             f"env variable or {DEFAULT_EMAIL_FROM})",
+    )
+    irods_validate_parser.add_argument(
+        "--email-subject",
+        type=str,
+        default=None,
+        help="Subject line for emailed reports",
+    )
+    irods_validate_parser.add_argument(
+        "--smtp-host",
+        type=str,
+        default=os.environ.get("VALIDATION_SMTP_HOST", DEFAULT_SMTP_HOST),
+        help="SMTP host used to send emailed reports (default: VALIDATION_SMTP_HOST "
+             f"env variable or {DEFAULT_SMTP_HOST})",
+    )
+    irods_validate_parser.add_argument(
         "--report",
         type=str,
         default=None,
@@ -184,6 +207,26 @@ def init_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=None,
         help="Email address to send the validation report to",
+    )
+    local_validate_parser.add_argument(
+        "--email-from",
+        type=str,
+        default=os.environ.get("VALIDATION_EMAIL_FROM", DEFAULT_EMAIL_FROM),
+        help="Sender address for emailed reports (default: VALIDATION_EMAIL_FROM "
+             f"env variable or {DEFAULT_EMAIL_FROM})",
+    )
+    local_validate_parser.add_argument(
+        "--email-subject",
+        type=str,
+        default=None,
+        help="Subject line for emailed reports",
+    )
+    local_validate_parser.add_argument(
+        "--smtp-host",
+        type=str,
+        default=os.environ.get("VALIDATION_SMTP_HOST", DEFAULT_SMTP_HOST),
+        help="SMTP host used to send emailed reports (default: VALIDATION_SMTP_HOST "
+             f"env variable or {DEFAULT_SMTP_HOST})",
     )
     local_validate_parser.add_argument(
         "--report",
@@ -311,8 +354,8 @@ def emit_reports(reports, args, subject: str) -> None:
     if args.email:
         msg = EmailMessage()
         msg.set_content(report_to_show)
-        msg["Subject"] = subject
-        msg["From"] = "noreply-reprocessing@cellgeni-su"
+        msg["Subject"] = args.email_subject or subject
+        msg["From"] = args.email_from
         msg["To"] = ", ".join(args.email)
         if args.report:
             with open(args.report, "rb") as f:
@@ -325,7 +368,7 @@ def emit_reports(reports, args, subject: str) -> None:
                 filename=file_name
             )
 
-        with smtplib.SMTP("localhost") as server:
+        with smtplib.SMTP(args.smtp_host) as server:
             server.send_message(msg)
 
 

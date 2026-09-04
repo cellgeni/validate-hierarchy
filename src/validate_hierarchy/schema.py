@@ -70,7 +70,7 @@ def _construct_include(loader: IncludeLoader, node: yaml.nodes.ScalarNode):
     try:
         with open(filepath, encoding="utf-8") as f:
             return yaml.load(f, IncludeLoader)
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise SchemaError(f"Cannot read included schema file {filepath}: {exc}") from exc
 
 
@@ -118,7 +118,9 @@ def load_raw_schema(path: str | Path) -> Any:
     try:
         with open(path, encoding="utf-8") as f:
             return yaml.load(f, Loader=IncludeLoader)
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
+        # UnicodeDecodeError is a ValueError, not an OSError, and PyYAML does
+        # not wrap it when decoding happens in the text stream we hand it.
         raise SchemaError(f"Cannot read schema file {path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise SchemaError(f"Invalid YAML in schema file {path}: {exc}") from exc
